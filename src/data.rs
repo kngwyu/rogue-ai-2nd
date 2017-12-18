@@ -1,32 +1,5 @@
 // domain knowleadge
-// mainly from https://nethackwiki.com/wiki/Rogue_(game)
-bitflags! {
-    pub struct Attribute: u32 {
-        const MEAN       = 0b00001;
-        const FLYING     = 0b00010;
-        const REGENERATE = 0b00100;
-        const GREEDY     = 0b01000;
-        const INVISIBLE  = 0b10000;
-    }
-}
-
-mod fld {
-    pub const ROAD: u8 = b'#';
-    pub const FLOOR: u8 = b'.';
-    pub const WALL_H: u8 = b'-';
-    pub const WALL_V: u8 = b'|';
-    pub const STAIR: u8 = b'%';
-    pub const DOOR: u8 = b'+';
-}
-
-mod item {
-    pub const PORTION: u8 = b'!';
-    pub const SCROLL: u8 = b'?';
-    pub const ARM: u8 = b')';
-    pub const WAND: u8 = b'/';
-    pub const GOLD: u8 = b'*';
-    pub const FOOD: u8 = b':';
-}
+// enemy data is from https://nethackwiki.com/wiki/Rogue_(game), thanks
 
 #[derive(Debug, Copy, Clone)]
 pub enum Dist {
@@ -110,5 +83,80 @@ impl Action {
             Action::SaveGame => vec![b'S'],
             Action::Quit => vec![b'Q'],
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PlayerStatus {
+    pub stage_level: u8,
+    pub gold: u32,
+    pub cur_hp: u32,
+    pub max_hp: u32,
+    pub cur_str: u32,
+    pub max_str: u32,
+    pub arm: u8,
+    pub exp_level: u32,
+    pub exp: u32,
+}
+
+impl Default for PlayerStatus {
+    fn default() -> Self {
+        PlayerStatus {
+            stage_level: 1,
+            gold: 0,
+            cur_hp: 12,
+            max_hp: 12,
+            cur_str: 16,
+            max_str: 16,
+            arm: 4,
+            exp_level: 1,
+            exp: 0,
+        }
+    }
+}
+struct Cell {}
+struct Dangeon {}
+enum Field {
+    Wall,
+    Floor,
+    Stair,
+    Door,
+    Road,
+    UnknownInside, // hidden by object
+    Unknown, // even outside or inside isn't known
+}
+enum FieldObject {
+    Enemy,
+    Item,
+}
+
+mod fld {
+    pub const ROAD: u8 = b'#';
+    pub const FLOOR: u8 = b'.';
+    pub const WALL_H: u8 = b'-';
+    pub const WALL_V: u8 = b'|';
+    pub const STAIR: u8 = b'%';
+    pub const DOOR: u8 = b'+';
+}
+
+mod item {
+    pub const PORTION: u8 = b'!';
+    pub const SCROLL: u8 = b'?';
+    pub const ARM: u8 = b')';
+    pub const WAND: u8 = b'/';
+    pub const GOLD: u8 = b'*';
+    pub const FOOD: u8 = b':';
+}
+
+enum Enemy {
+
+}
+bitflags! {
+    pub struct Attribute: u32 {
+        const MEAN       = 0b00001;
+        const FLYING     = 0b00010;
+        const REGENERATE = 0b00100;
+        const GREEDY     = 0b01000;
+        const INVISIBLE  = 0b10000;
     }
 }
