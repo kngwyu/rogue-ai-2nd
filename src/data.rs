@@ -97,6 +97,7 @@ pub struct PlayerStatus {
     pub arm: u8,
     pub exp_level: u32,
     pub exp: u32,
+    pub hungry: bool,
 }
 
 impl Default for PlayerStatus {
@@ -111,14 +112,23 @@ impl Default for PlayerStatus {
             arm: 4,
             exp_level: 1,
             exp: 0,
+            hungry: false,
         }
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
-
+    NotInjured(Enemy),
+    Injured(Enemy),
+    Direction,
+    Scored(Enemy),
+    Defeated(Enemy),
+    Missed(Enemy),
+    None,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Enemy {
     Aquator,
     Bat,
@@ -149,7 +159,7 @@ pub enum Enemy {
     None,
 }
 impl Enemy {
-    fn from_byte(u: u8) -> Enemy {
+    pub fn from_byte(u: u8) -> Enemy {
         match u {
             b'a' | b'A' => Enemy::Aquator,
             b'b' | b'B' => Enemy::Bat,
@@ -190,22 +200,15 @@ bitflags! {
         const INVISIBLE  = 0b10000;
     }
 }
-struct Cell {}
-struct Dangeon {}
-enum Field {
-    Wall,
-    Floor,
-    Stair,
-    Door,
-    Road,
-    UnknownInside, // hidden by object
-    Unknown, // even outside or inside isn't known
-}
-enum FieldObject {
-    Enemy,
-    Item,
-}
 
+pub enum Item {
+    Portion,
+    Scroll,
+    Arm,
+    Wand,
+    Gold,
+    Food,
+}
 mod fld {
     pub const ROAD: u8 = b'#';
     pub const FLOOR: u8 = b'.';
@@ -222,4 +225,20 @@ mod item {
     pub const WAND: u8 = b'/';
     pub const GOLD: u8 = b'*';
     pub const FOOD: u8 = b':';
+}
+
+struct Cell {}
+struct Dangeon {}
+enum Field {
+    Wall,
+    Floor,
+    Stair,
+    Door,
+    Road,
+    UnknownInside, // hidden by object
+    Unknown, // even outside or inside isn't known
+}
+enum FieldObject {
+    Enemy,
+    Item,
 }
