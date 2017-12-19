@@ -86,7 +86,7 @@ impl Action {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlayerStatus {
     pub stage_level: u8,
     pub gold: u32,
@@ -112,6 +112,82 @@ impl Default for PlayerStatus {
             exp_level: 1,
             exp: 0,
         }
+    }
+}
+
+pub enum Msg {
+
+}
+
+pub enum Enemy {
+    Aquator,
+    Bat,
+    Centaur,
+    Dragon,
+    Emu,
+    Flytrap,
+    Griffin,
+    Hobgoblin,
+    IceMonster,
+    Jabberwock,
+    Kestral,
+    Leprechaun,
+    Medusa,
+    Nymph,
+    Orc,
+    Phantom,
+    Quagga,
+    Rattlesnake,
+    Snake,
+    Troll,
+    UrVile,
+    Vampire,
+    Wraith,
+    Xeroc,
+    Yeti,
+    Zombie,
+    None,
+}
+impl Enemy {
+    fn from_byte(u: u8) -> Enemy {
+        match u {
+            b'a' | b'A' => Enemy::Aquator,
+            b'b' | b'B' => Enemy::Bat,
+            b'c' | b'C' => Enemy::Centaur,
+            b'd' | b'D' => Enemy::Dragon,
+            b'e' | b'E' => Enemy::Emu,
+            b'f' | b'F' => Enemy::Flytrap,
+            b'g' | b'G' => Enemy::Griffin,
+            b'h' | b'H' => Enemy::Hobgoblin,
+            b'i' | b'I' => Enemy::IceMonster,
+            b'j' | b'J' => Enemy::Jabberwock,
+            b'k' | b'K' => Enemy::Kestral,
+            b'l' | b'L' => Enemy::Leprechaun,
+            b'm' | b'M' => Enemy::Medusa,
+            b'n' | b'N' => Enemy::Nymph,
+            b'o' | b'O' => Enemy::Orc,
+            b'p' | b'P' => Enemy::Phantom,
+            b'q' | b'Q' => Enemy::Quagga,
+            b'r' | b'R' => Enemy::Rattlesnake,
+            b's' | b'S' => Enemy::Snake,
+            b't' | b'T' => Enemy::Troll,
+            b'u' | b'U' => Enemy::UrVile,
+            b'v' | b'V' => Enemy::Vampire,
+            b'w' | b'W' => Enemy::Wraith,
+            b'x' | b'X' => Enemy::Xeroc,
+            b'y' | b'Y' => Enemy::Yeti,
+            b'z' | b'Z' => Enemy::Zombie,
+            _ => Enemy::None,
+        }
+    }
+}
+bitflags! {
+    pub struct Attribute: u32 {
+        const MEAN       = 0b00001;
+        const FLYING     = 0b00010;
+        const REGENERATE = 0b00100;
+        const GREEDY     = 0b01000;
+        const INVISIBLE  = 0b10000;
     }
 }
 struct Cell {}
@@ -146,17 +222,4 @@ mod item {
     pub const WAND: u8 = b'/';
     pub const GOLD: u8 = b'*';
     pub const FOOD: u8 = b':';
-}
-
-enum Enemy {
-
-}
-bitflags! {
-    pub struct Attribute: u32 {
-        const MEAN       = 0b00001;
-        const FLYING     = 0b00010;
-        const REGENERATE = 0b00100;
-        const GREEDY     = 0b01000;
-        const INVISIBLE  = 0b10000;
-    }
 }
