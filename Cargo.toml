@@ -2,10 +2,13 @@
 authors = ["kngwyu <yuji.kngw.80s.revive@gmail.com>"]
 name = "rogue-ai-2nd"
 version = "0.0.1"
-
 [dependencies]
 bitflags = "1.0.1"
 regex = "0.2.3"
+clippy = {version = "*", optional = true}
 
 [dependencies.curses-game-wrapper]
 path = "../curses-game-wrapper"
+
+[features]
+default = []

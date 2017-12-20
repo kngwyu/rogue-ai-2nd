@@ -125,9 +125,22 @@ pub enum Msg {
     Scored(Enemy),
     Defeated(Enemy),
     Missed(Enemy),
+    Item(ItemWithId),
+    ArmorW,
+    ArmorT,
+    WhichObj,
+    LevelUp(u8),
+    Ate,
+    PackFull,
+    MovedOnto(Item),
+    Dropped,
+    CallIt,
     None,
 }
 
+pub trait FloorState {
+    fn from_byte(u: u8) -> Self;
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Enemy {
     Aquator,
@@ -158,8 +171,8 @@ pub enum Enemy {
     Zombie,
     None,
 }
-impl Enemy {
-    pub fn from_byte(u: u8) -> Enemy {
+impl FloorState for Enemy {
+    fn from_byte(u: u8) -> Self {
         match u {
             b'a' | b'A' => Enemy::Aquator,
             b'b' | b'B' => Enemy::Bat,
@@ -191,6 +204,8 @@ impl Enemy {
         }
     }
 }
+
+
 bitflags! {
     pub struct Attribute: u32 {
         const MEAN       = 0b00001;
@@ -201,44 +216,90 @@ bitflags! {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Item {
-    Portion,
+    Potion,
     Scroll,
-    Arm,
+    Armor(Armor),
+    Weapon(Weapon),
     Wand,
+    Food(Food),
     Gold,
-    Food,
+    Ring,
+    Amulet,
+    None,
 }
-mod fld {
-    pub const ROAD: u8 = b'#';
-    pub const FLOOR: u8 = b'.';
-    pub const WALL_H: u8 = b'-';
-    pub const WALL_V: u8 = b'|';
-    pub const STAIR: u8 = b'%';
-    pub const DOOR: u8 = b'+';
+impl FloorState for Item {
+    fn from_byte(u: u8) -> Item {
+        match u {
+            b'!' => Item::Potion,
+            b'?' => Item::Scroll,
+            b']' => Item::Armor(Armor::None),
+            b')' => Item::Weapon(Weapon::None),
+            b'/' => Item::Wand,
+            b'*' => Item::Gold,
+            b':' => Item::Food(Food::None),
+            b'=' => Item::Ring,
+            b',' => Item::Amulet,
+            _ => Item::None,
+        }
+    }
 }
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Weapon {
+    Mace,
+    LongSword,
+    Bow,
+    Dagger,
+    TwoHandedSword,
+    Dart,
+    Shuriken,
+    Spear,
+    None,
+}
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Armor {
+    Leather,
+    Studded,
+    Ring,
+    Scale,
+    Chain,
+    Splint,
+    Banded,
+    Plate,
+    None,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemWithId(pub Item, pub String, pub u8, pub u32);
 
-mod item {
-    pub const PORTION: u8 = b'!';
-    pub const SCROLL: u8 = b'?';
-    pub const ARM: u8 = b')';
-    pub const WAND: u8 = b'/';
-    pub const GOLD: u8 = b'*';
-    pub const FOOD: u8 = b':';
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Food {
+    Ration,
+    SlimeMold,
+    None,
 }
-
-struct Cell {}
-struct Dangeon {}
-enum Field {
-    Wall,
+pub enum Field {
+    Road,
     Floor,
+    Wall,
     Stair,
     Door,
-    Road,
-    UnknownInside, // hidden by object
-    Unknown, // even outside or inside isn't known
+    None,
 }
-enum FieldObject {
+impl FloorState for Field {
+    fn from_byte(u: u8) -> Self {
+        match u {
+            b'#' => Field::Road,
+            b'.' => Field::Floor,
+            b'-' | b'|' => Field::Wall,
+            b'%' => Field::Stair,
+            b'+' => Field::Door,
+            _ => Field::None,
+        }
+    }
+}
+
+pub enum FieldObject {
     Enemy,
     Item,
 }
