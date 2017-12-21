@@ -1,6 +1,21 @@
 // domain knowleadge
 // enemy data is from https://nethackwiki.com/wiki/Rogue_(game), thanks
 
+macro_rules! default_none {
+    ($enum:ident) => {
+        impl Default for $enum {
+            fn default()-> $enum {
+                $enum::None
+            }
+        }
+    };
+}
+
+pub trait Fetch {
+    type Message: ?Sized;
+    fn fetch(&mut self) -> Self::Message;
+}
+
 #[derive(Debug, Copy, Clone)]
 pub enum Dist {
     Up,
@@ -14,8 +29,8 @@ pub enum Dist {
 }
 
 // 時計まわり
-impl Dist {
-    pub fn from_int(d: u8) -> Dist {
+impl From<u8> for Dist {
+    fn from(d: u8) -> Self {
         match d {
             0u8 => Dist::Up,
             1u8 => Dist::RightUp,
@@ -27,8 +42,11 @@ impl Dist {
             _ => Dist::LeftUp,
         }
     }
-    pub fn to_byte(&self) -> u8 {
-        match *self {
+}
+
+impl Into<u8> for Dist {
+    fn into(self) -> u8 {
+        match self {
             Dist::Up => 0,
             Dist::RightUp => 1,
             Dist::Right => 2,
@@ -62,12 +80,12 @@ pub enum Action {
     Quit,
 }
 
-impl Action {
-    pub fn to_byte(&self) -> Vec<u8> {
-        match *self {
-            Action::Move(d) => vec![d.to_byte()],
-            Action::Fight(d) => vec![b'f', d.to_byte()],
-            Action::Throw((d, b)) => vec![b't', d.to_byte(), b],
+impl Into<Vec<u8>> for Action {
+    fn into(self) -> Vec<u8> {
+        match self {
+            Action::Move(d) => vec![d.into()],
+            Action::Fight(d) => vec![b'f', d.into()],
+            Action::Throw((d, b)) => vec![b't', d.into(), b],
             Action::UpStair => vec![b'<'],
             Action::DownStair => vec![b'>'],
             Action::Rest => vec![b'.'],
@@ -115,6 +133,10 @@ impl Default for PlayerStatus {
     }
 }
 
+pub enum PlayerFetchResult {
+
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
     NotInjured(Enemy),
@@ -136,9 +158,8 @@ pub enum Msg {
     None,
 }
 
-pub trait FloorState {
-    fn from_byte(u: u8) -> Self;
-}
+default_none!(Msg);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Enemy {
     Aquator,
@@ -169,8 +190,11 @@ pub enum Enemy {
     Zombie,
     None,
 }
-impl FloorState for Enemy {
-    fn from_byte(u: u8) -> Self {
+
+default_none!(Enemy);
+
+impl From<u8> for Enemy {
+    fn from(u: u8) -> Self {
         match u {
             b'a' | b'A' => Enemy::Aquator,
             b'b' | b'B' => Enemy::Bat,
@@ -226,8 +250,11 @@ pub enum Item {
     Amulet,
     None,
 }
-impl FloorState for Item {
-    fn from_byte(u: u8) -> Item {
+
+default_none!(Item);
+
+impl From<u8> for Item {
+    fn from(u: u8) -> Item {
         match u {
             b'!' => Item::Potion,
             b'?' => Item::Scroll,
@@ -254,6 +281,9 @@ pub enum Weapon {
     Spear,
     None,
 }
+
+default_none!(Weapon);
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Armor {
     Leather,
@@ -266,6 +296,9 @@ pub enum Armor {
     Plate,
     None,
 }
+
+default_none!(Armor);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemWithId(pub Item, pub String, pub u8, pub u32);
 
@@ -275,6 +308,10 @@ pub enum Food {
     SlimeMold,
     None,
 }
+
+default_none!(Food);
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Surface {
     Road,
     Floor,
@@ -283,8 +320,11 @@ pub enum Surface {
     Door,
     None,
 }
-impl FloorState for Surface {
-    fn from_byte(u: u8) -> Self {
+
+default_none!(Surface);
+
+impl From<u8> for Surface {
+    fn from(u: u8) -> Self {
         match u {
             b'#' => Surface::Road,
             b'.' => Surface::Floor,
@@ -296,9 +336,12 @@ impl FloorState for Surface {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FieldObject {
     Enemy(Enemy),
     Item(Item),
     Player,
     None,
 }
+
+default_none!(FieldObject);

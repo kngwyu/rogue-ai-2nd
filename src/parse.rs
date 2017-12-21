@@ -71,7 +71,7 @@ pub struct MsgParse {
 
 impl MsgParse {
     #[cfg_attr(feature = "clippy", allow(trivial_regex))]
-    fn new() -> Self {
+    pub fn new() -> Self {
         MsgParse {
             rset: RegexSet::new(&[
                 r"--More--",                     // 0
@@ -132,10 +132,12 @@ impl MsgParse {
             ring: Regex::new(r".* (?P<name>\w*) ring").unwrap(),
         }
     }
+
     fn enemy(&self, s: &str) -> Enemy {
         let cap = self.detect_enemy.captures(s).unwrap();
-        Enemy::from_byte(cap["enemy"].as_bytes()[0])
+        Enemy::from(cap["enemy"].as_bytes()[0])
     }
+
     fn match_item(&self, s: &str) -> Item {
         let matches: Vec<_> = self.item_set.matches(s).into_iter().collect();
         match matches[0] {
@@ -165,6 +167,7 @@ impl MsgParse {
             _ => Item::None,
         }
     }
+
     fn item(&self, s: &str) -> ItemWithId {
         let cap = self.detect_item.captures(s).unwrap();
         let num = if cap["num"].is_empty() || cap["num"].as_bytes()[0] == b'a' {
@@ -213,14 +216,17 @@ impl MsgParse {
             }
         }
     }
+
     fn to_int(&self, s: &str) -> u32 {
         let cap = self.integer.captures(s).unwrap();
         str::parse::<u32>(&cap["int"]).unwrap()
     }
+
     fn gold(&self, s: &str) -> ItemWithId {
         ItemWithId(Item::Gold, String::new(), 0, self.to_int(s))
     }
-    fn parse(&self, s: &str) -> (Msg, bool) {
+
+    pub fn parse(&self, s: &str) -> (Msg, bool) {
         let matches: BinaryHeap<_> = self.rset.matches(s).into_iter().collect();
         let mut more = false;
         let mut res = Msg::None;
@@ -256,7 +262,9 @@ mod test {
     use ::*;
     #[test]
     fn status_test() {
-        let text = "Level: 3  Gold: 237    Hp: 18(25)  Str: 16(16)  Arm: 4   Exp: 3/23  Hungry";
+        let text1 = "Level: 3  Gold: 237    Hp: 18(25)  Str: 16(16)  Arm: 4   Exp: 3/23  Hungry";
+        let text2 =
+            "Level: 1  Gold: 0      Hp: 12(12)  Str: 16(16)  Arm: 4   Exp: 1/0               ";
         let parser = StatusParse::new();
         let res = PlayerStatus { stage_level: 3,
                                  gold: 237,
@@ -268,7 +276,8 @@ mod test {
                                  exp_level: 3,
                                  exp: 23,
                                  hungry: true, };
-        assert_eq!(res, parser.parse(text).unwrap());
+        assert_eq!(res, parser.parse(text1).unwrap());
+        assert_eq!(parser.parse(text2).unwrap(), PlayerStatus::default());
     }
     #[test]
     fn msg_test() {
