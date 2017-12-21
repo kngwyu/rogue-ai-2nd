@@ -1,4 +1,3 @@
-
 use regex::{Regex, RegexSet};
 use data::*;
 use std::collections::BinaryHeap;
@@ -10,8 +9,8 @@ pub struct StatusParse {
 impl StatusParse {
     #[cfg_attr(feature = "clippy", allow(trivial_regex))]
     pub fn new() -> Self {
-        StatusParse {
-            re: Regex::new(
+        StatusParse { re:
+                          Regex::new(
                 r"(?x)
 Level:\D*
 (?P<stage>\d*) # Stage Level
@@ -32,10 +31,8 @@ Level:\D*
 \D*
 (?P<exp>\d*) # Exp
 ",
-            )
-                .unwrap(),
-            is_hungry: Regex::new(r"Hungry").unwrap(),
-        }
+            ).unwrap(),
+                      is_hungry: Regex::new(r"Hungry").unwrap(), }
     }
     pub fn parse(&self, s: &str) -> Option<PlayerStatus> {
         match self.re.captures(s) {
@@ -45,18 +42,16 @@ Level:\D*
                     capped.parse::<u32>().unwrap()
                 };
                 let hung = self.is_hungry.is_match(s);
-                Some(PlayerStatus {
-                    stage_level: get("stage") as _,
-                    gold: get("gold"),
-                    cur_hp: get("curhp"),
-                    max_hp: get("maxhp"),
-                    cur_str: get("curstr"),
-                    max_str: get("maxstr"),
-                    arm: get("arm") as _,
-                    exp_level: get("explevel"),
-                    exp: get("exp"),
-                    hungry: hung,
-                })
+                Some(PlayerStatus { stage_level: get("stage") as _,
+                                    gold: get("gold"),
+                                    cur_hp: get("curhp"),
+                                    max_hp: get("maxhp"),
+                                    cur_str: get("curstr"),
+                                    max_str: get("maxstr"),
+                                    arm: get("arm") as _,
+                                    exp_level: get("explevel"),
+                                    exp: get("exp"),
+                                    hungry: hung, })
             }
             None => None,
         }
@@ -78,66 +73,59 @@ impl MsgParse {
     #[cfg_attr(feature = "clippy", allow(trivial_regex))]
     fn new() -> Self {
         MsgParse {
-            rset: RegexSet::new(
-                &[
-                    r"--More--",                     // 0
-                    r"The .*n't",                    // 1
-                    r"The .*? miss",                 // 2
-                    r"The .*? injured",              // 3
-                    r"The .*? hit",                  // 4
-                    r"Which direction",              // 5
-                    r"You scored",                   // 6
-                    r"You have defeated",            // 7
-                    r"You .*? miss",                 // 8
-                    r"You .*?n't",                   // 9
-                    r"You now have ",                // 10
-                    r"You found",                    // 11
-                    r"You are now wearing",          // 12
-                    r"You used to be wearing",       // 13
-                    r"Which object do you want to",  // 14
-                    r"Welcome to level",             // 15
-                    r"Yum",                          // 16
-                    r"There's no room in your pack", // 17
-                    r"You moved onto",               // 18
-                    r"Dropped",                      // 19
-                    r"do you want to call",          // 20
-                ],
-            )
-                  .unwrap(),
+            rset: RegexSet::new(&[
+                r"--More--",                     // 0
+                r"The .*n't",                    // 1
+                r"The .*? miss",                 // 2
+                r"The .*? injured",              // 3
+                r"The .*? hit",                  // 4
+                r"Which direction",              // 5
+                r"You scored",                   // 6
+                r"You have defeated",            // 7
+                r"You .*? miss",                 // 8
+                r"You .*?n't",                   // 9
+                r"You now have ",                // 10
+                r"You found",                    // 11
+                r"You are now wearing",          // 12
+                r"You used to be wearing",       // 13
+                r"Which object do you want to",  // 14
+                r"Welcome to level",             // 15
+                r"Yum",                          // 16
+                r"There's no room in your pack", // 17
+                r"You moved onto",               // 18
+                r"Dropped",                      // 19
+                r"do you want to call",          // 20
+            ]).unwrap(),
             detect_enemy: Regex::new(r"(?i)the.*?(?P<enemy>\w)").unwrap(),
             detect_item: Regex::new(
                 r"You now have (?P<num>a|\d*)[ |[\w^a]](?P<item>.*?)\((?P<id>\w)\)",
-            )
-                         .unwrap(),
-            item_set: RegexSet::new(
-                &[
-                    r"potion",           // 0
-                    r"scroll",           // 1
-                    r"ring",             // 2
-                    r"food",             // 3
-                    r"mold",             // 4
-                    r"eathor armor",     // 5
-                    r"tudded leadther",  // 6
-                    r"ing mail",         // 7
-                    r"cale mail",        // 8
-                    r"hain mail",        // 9
-                    r"plint mail",       // 10
-                    r"anded mail",       // 11
-                    r"late mail",        // 12
-                    r"mace",             // 13
-                    r"long sword",       // 14
-                    r"bow",              // 15
-                    r"dagger",           // 16 
-                    r"two handed sword", // 17
-                    r"dart",             // 18
-                    r"shuriken",         // 19
-                    r"spear",            // 20
-                    r"wand",             // 21
-                    r"staff",            // 22
-                    r"mulet",            // 23
-                ],
-            )
-                .unwrap(),
+            ).unwrap(),
+            item_set: RegexSet::new(&[
+                r"potion",           // 0
+                r"scroll",           // 1
+                r"ring",             // 2
+                r"food",             // 3
+                r"mold",             // 4
+                r"eathor armor",     // 5
+                r"tudded leadther",  // 6
+                r"ing mail",         // 7
+                r"cale mail",        // 8
+                r"hain mail",        // 9
+                r"plint mail",       // 10
+                r"anded mail",       // 11
+                r"late mail",        // 12
+                r"mace",             // 13
+                r"long sword",       // 14
+                r"bow",              // 15
+                r"dagger",           // 16
+                r"two handed sword", // 17
+                r"dart",             // 18
+                r"shuriken",         // 19
+                r"spear",            // 20
+                r"wand",             // 21
+                r"staff",            // 22
+                r"mulet",            // 23
+            ]).unwrap(),
             integer: Regex::new(r"\D*(?P<int>\d*)").unwrap(),
             potion: Regex::new(r".*?(?P<name>\w*) potion").unwrap(),
             scroll: Regex::new(r".*'(?P<name>.*)'").unwrap(),
@@ -153,7 +141,7 @@ impl MsgParse {
         match matches[0] {
             0 => Item::Potion,
             1 => Item::Scroll,
-            2 => Item::Ring, 
+            2 => Item::Ring,
             3 => Item::Food(Food::Ration),
             4 => Item::Food(Food::SlimeMold),
             5 => Item::Armor(Armor::Leather),
@@ -175,11 +163,11 @@ impl MsgParse {
             21 | 22 => Item::Wand,
             23 => Item::Amulet,
             _ => Item::None,
-        }   
+        }
     }
     fn item(&self, s: &str) -> ItemWithId {
         let cap = self.detect_item.captures(s).unwrap();
-        let num = if cap["num"].is_empty()  || cap["num"].as_bytes()[0] == b'a' {
+        let num = if cap["num"].is_empty() || cap["num"].as_bytes()[0] == b'a' {
             1
         } else {
             str::parse::<u32>(&cap["num"]).unwrap()
@@ -193,7 +181,7 @@ impl MsgParse {
         let ret_with_n = |item: Item, re: &Regex| -> ItemWithId {
             let cp = re.captures(&cap["item"]).unwrap();
             ret_item!(item, &cp["name"])
-        };        
+        };
         if matches.is_empty() {
             ret_item!(Item::None)
         } else {
@@ -242,11 +230,11 @@ impl MsgParse {
                 1 | 2 => res = Msg::NotInjured(self.enemy(s)),
                 3 | 4 => res = Msg::Injured(self.enemy(s)),
                 5 => res = Msg::Direction,
-                6 => res = Msg::Scored(self.enemy(s)),                
+                6 => res = Msg::Scored(self.enemy(s)),
                 7 => res = Msg::Defeated(self.enemy(s)),
                 8 | 9 => res = Msg::Missed(self.enemy(s)),
-                10 => res = Msg::Item(self.item(s)), 
-                11 => res = Msg::Item(self.gold(s)), 
+                10 => res = Msg::Item(self.item(s)),
+                11 => res = Msg::Item(self.gold(s)),
                 12 => res = Msg::ArmorW,
                 13 => res = Msg::ArmorT,
                 14 => res = Msg::WhichObj,
@@ -270,55 +258,49 @@ mod test {
     fn status_test() {
         let text = "Level: 3  Gold: 237    Hp: 18(25)  Str: 16(16)  Arm: 4   Exp: 3/23  Hungry";
         let parser = StatusParse::new();
-        let res = PlayerStatus {
-            stage_level: 3,
-            gold: 237,
-            cur_hp: 18,
-            max_hp: 25,
-            cur_str: 16,
-            max_str: 16,
-            arm: 4,
-            exp_level: 3,
-            exp: 23,
-            hungry: true,
-        };
+        let res = PlayerStatus { stage_level: 3,
+                                 gold: 237,
+                                 cur_hp: 18,
+                                 max_hp: 25,
+                                 cur_str: 16,
+                                 max_str: 16,
+                                 arm: 4,
+                                 exp_level: 3,
+                                 exp: 23,
+                                 hungry: true, };
         assert_eq!(res, parser.parse(text).unwrap());
     }
     #[test]
     fn msg_test() {
-        let drink_msgs = vec![
-            "Hey, this tastes great.  It make you feel warm all over--More--",
-        ];
+        let drink_msgs = vec!["Hey, this tastes great.  It make you feel warm all over--More--"];
         let scroll_msgs = vec!["Your armor is covered by a shimmering gold shield"];
-        let msgs = vec![
-            "The emu has injured you",
-            "The emu swings and hits you",
-            "The bat hit you",
-            "The bat doesn't hit you",
-            "The hobgoblin barely misses you",
-            "Which direction?",
-            "You barely miss the hobgoblin--More--",
-            "You scored an excellent hit on the kestrel--More--",
-            "You have defeated the emu",
-            "You found 32 gold pieces",
-            "You now have a yellow potion (g)",
-            "You now have a scroll titled 'tuenes eepme' (h)",
-            "You now have 2 scrolls titled 'org vly gopsehzok hasnatue' (o)--More--",
-            "You now have scale mail (i)",
-            "You now have a tiger eye ring (f)",
-            "You now have 2 rations of food (a)--More--",
-            "I see no monster there",
-            "You are now wearing +1 ring mail [protection 4]",
-            "You used to be wearing b) +1 ring mail [protection 4]",
-            "Which object do you want to quaff? (* for list): ",
-            "Welcome to level 4--More--",
-            "You feel a bite in your leg and now feel weaker--More--",
-            "Yum, that tasted good",
-            "Your purse feels lighter",
-            "What do you want to call it?",
-            "There's no room in your pack--More--",
-            "You moved onto splint mail",
-        ];
+        let msgs = vec!["The emu has injured you",
+                        "The emu swings and hits you",
+                        "The bat hit you",
+                        "The bat doesn't hit you",
+                        "The hobgoblin barely misses you",
+                        "Which direction?",
+                        "You barely miss the hobgoblin--More--",
+                        "You scored an excellent hit on the kestrel--More--",
+                        "You have defeated the emu",
+                        "You found 32 gold pieces",
+                        "You now have a yellow potion (g)",
+                        "You now have a scroll titled 'tuenes eepme' (h)",
+                        "You now have 2 scrolls titled 'org vly gopsehzok hasnatue' (o)--More--",
+                        "You now have scale mail (i)",
+                        "You now have a tiger eye ring (f)",
+                        "You now have 2 rations of food (a)--More--",
+                        "I see no monster there",
+                        "You are now wearing +1 ring mail [protection 4]",
+                        "You used to be wearing b) +1 ring mail [protection 4]",
+                        "Which object do you want to quaff? (* for list): ",
+                        "Welcome to level 4--More--",
+                        "You feel a bite in your leg and now feel weaker--More--",
+                        "Yum, that tasted good",
+                        "Your purse feels lighter",
+                        "What do you want to call it?",
+                        "There's no room in your pack--More--",
+                        "You moved onto splint mail"];
         let parser = MsgParse::new();
         for s in msgs {
             println!("{}", s);

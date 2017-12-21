@@ -102,18 +102,16 @@ pub struct PlayerStatus {
 
 impl Default for PlayerStatus {
     fn default() -> Self {
-        PlayerStatus {
-            stage_level: 1,
-            gold: 0,
-            cur_hp: 12,
-            max_hp: 12,
-            cur_str: 16,
-            max_str: 16,
-            arm: 4,
-            exp_level: 1,
-            exp: 0,
-            hungry: false,
-        }
+        PlayerStatus { stage_level: 1,
+                       gold: 0,
+                       cur_hp: 12,
+                       max_hp: 12,
+                       cur_str: 16,
+                       max_str: 16,
+                       arm: 4,
+                       exp_level: 1,
+                       exp: 0,
+                       hungry: false, }
     }
 }
 
@@ -205,9 +203,8 @@ impl FloorState for Enemy {
     }
 }
 
-
 bitflags! {
-    pub struct Attribute: u32 {
+    pub struct EnemyAttr: u8 {
         const MEAN       = 0b00001;
         const FLYING     = 0b00010;
         const REGENERATE = 0b00100;
@@ -278,7 +275,7 @@ pub enum Food {
     SlimeMold,
     None,
 }
-pub enum Field {
+pub enum Surface {
     Road,
     Floor,
     Wall,
@@ -286,20 +283,22 @@ pub enum Field {
     Door,
     None,
 }
-impl FloorState for Field {
+impl FloorState for Surface {
     fn from_byte(u: u8) -> Self {
         match u {
-            b'#' => Field::Road,
-            b'.' => Field::Floor,
-            b'-' | b'|' => Field::Wall,
-            b'%' => Field::Stair,
-            b'+' => Field::Door,
-            _ => Field::None,
+            b'#' => Surface::Road,
+            b'.' => Surface::Floor,
+            b'-' | b'|' => Surface::Wall,
+            b'%' => Surface::Stair,
+            b'+' => Surface::Door,
+            _ => Surface::None,
         }
     }
 }
 
 pub enum FieldObject {
-    Enemy,
-    Item,
+    Enemy(Enemy),
+    Item(Item),
+    Player,
+    None,
 }
