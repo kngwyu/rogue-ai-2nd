@@ -30,7 +30,12 @@ lazy_static!{
         None => Severity::Warning,
     };
     pub static ref LOGGER: Logger = match MATCHES.value_of("DEBUG_FILE") {
-        Some(s) => FileLoggerBuilder::new(s).level(Severity::Debug).build(),
+        Some(s) => {
+            let mut builder = FileLoggerBuilder::new(s);
+            builder.level(Severity::Debug);
+            builder.truncate();
+            builder.build()
+        }
         None => NullLoggerBuilder{}.build(),
     }.ok().unwrap();
 }

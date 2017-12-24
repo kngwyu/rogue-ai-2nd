@@ -23,7 +23,7 @@ use consts::*;
 use data::*;
 use parse::*;
 use agent::Agent;
-use cgw::{ActionResult, GameSetting, LogType, Reactor};
+use cgw::{ActionResult, GameSetting, LogType, OpenMode, Reactor};
 use std::time::Duration;
 use std::error::Error;
 fn main() {
@@ -32,13 +32,17 @@ fn main() {
         Err(why) => panic!("usage: --iter 10, {:?}", why.description()),
     };
     for _ in 0..iter {
-        let gs = GameSetting::new("rogue").env("ROGUEUSER", "2ndAI")
-                                          .lines(LINES)
-                                          .columns(COLUMNS)
-                                          .debug_type(LogType::File(("debug_cgw.txt".to_owned(),
-                                                                    *LEVEL)))
-                                          .max_loop(10)
-                                          .draw_on(Duration::from_millis(150));
+        let gs = GameSetting::new("rogue")
+            .env("ROGUEUSER", "2ndAI")
+            .lines(LINES)
+            .columns(COLUMNS)
+            .debug_type(LogType::File((
+                "debug_cgw.txt".to_owned(),
+                *LEVEL,
+                OpenMode::Truncate,
+            )))
+            .max_loop(10)
+            .draw_on(Duration::from_millis(150));
         let game = gs.build();
         let mut ai = Agent::new();
         game.play(&mut ai);
