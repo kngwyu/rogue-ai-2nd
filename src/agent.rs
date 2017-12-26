@@ -5,30 +5,39 @@ use cgw::{ActionResult, Reactor};
 use std::str;
 
 pub struct Agent {
-    stat_parse: StatusParse,
-    msg_parse: MsgParse,
+    stat_parser: StatusParse,
+    msg_parser: MsgParse,
     player_stat: PlayerStatus,
+    dangeon: Dangeon,
 }
 
 impl Agent {
     pub fn new() -> Self {
-        Agent { stat_parse: StatusParse::new(),
-                msg_parse: MsgParse::new(),
-                player_stat: PlayerStatus::default(), }
+        Agent {
+            stat_parser: StatusParse::new(),
+            msg_parser: MsgParse::new(),
+            player_stat: PlayerStatus::new(),
+            dangeon: Dangeon::default(),
+        }
     }
 }
 
 impl Reactor for Agent {
     fn action(&mut self, action_res: ActionResult, turn: usize) -> Option<Vec<u8>> {
-        warn!(LOGGER, "{:?}", action_res);
+        trace!(LOGGER, "{:?}", action_res);
         match action_res {
             ActionResult::Changed(map) => {
-                let msg = str::from_utf8(&map[0]).unwrap();
-                let msg_parsed = self.msg_parse.parse(msg);
-                let stat = str::from_utf8(&map[LINES - 1]).unwrap();
-                let stat_parsed = self.stat_parse.parse(stat);
-                warn!(LOGGER, "{:?}", msg_parsed);
-                warn!(LOGGER, "{:?}", stat_parsed);
+                let msg_parsed = {
+                    let msg = str::from_utf8(&map[0]).unwrap();
+                    self.msg_parser.parse(msg)
+                };
+                let stat_diff = {
+                    let stat = str::from_utf8(&map[LINES - 1]).unwrap();
+                    match self.stat_parser.parse(stat) {
+                        Some(s) => self.player_stat.fetch(s),
+                        None => return None,
+                    }
+                };
             }
             ActionResult::NotChanged => {}
             ActionResult::GameEnded => {}

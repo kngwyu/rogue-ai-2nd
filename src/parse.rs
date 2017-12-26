@@ -3,14 +3,13 @@ use data::*;
 use std::collections::BinaryHeap;
 pub struct StatusParse {
     re: Regex,
-    is_hungry: Regex,
 }
 
 impl StatusParse {
     #[cfg_attr(feature = "clippy", allow(trivial_regex))]
     pub fn new() -> Self {
-        StatusParse { re:
-                          Regex::new(
+        StatusParse {
+            re: Regex::new(
                 r"(?x)
 Level:\D*
 (?P<stage>\d*) # Stage Level
@@ -30,28 +29,36 @@ Level:\D*
 (?P<explevel>\d*) # ExpLevel
 \D*
 (?P<exp>\d*) # Exp
+\W*
+(?P<hungry>\w*) # Hungry
 ",
             ).unwrap(),
-                      is_hungry: Regex::new(r"Hungry").unwrap(), }
+        }
     }
     pub fn parse(&self, s: &str) -> Option<PlayerStatus> {
         match self.re.captures(s) {
             Some(caps) => {
-                let get = |t: &str| -> u32 {
+                let get = |t: &str| -> i32 {
                     let capped = &caps[t];
-                    capped.parse::<u32>().unwrap()
+                    capped.parse::<i32>().unwrap()
                 };
-                let hung = self.is_hungry.is_match(s);
-                Some(PlayerStatus { stage_level: get("stage") as _,
-                                    gold: get("gold"),
-                                    cur_hp: get("curhp"),
-                                    max_hp: get("maxhp"),
-                                    cur_str: get("curstr"),
-                                    max_str: get("maxstr"),
-                                    arm: get("arm") as _,
-                                    exp_level: get("explevel"),
-                                    exp: get("exp"),
-                                    hungry: hung, })
+                let hung = match &caps["hungry"] {
+                    "Hungry" => 1,
+                    "Weak" => 2,
+                    _ => 0,
+                };
+                Some(PlayerStatus {
+                    stage_level: get("stage") as _,
+                    gold: get("gold"),
+                    cur_hp: get("curhp"),
+                    max_hp: get("maxhp"),
+                    cur_str: get("curstr"),
+                    max_str: get("maxstr"),
+                    arm: get("arm") as _,
+                    exp_level: get("explevel"),
+                    exp: get("exp"),
+                    hungry_level: hung,
+                })
             }
             None => None,
         }
@@ -266,50 +273,57 @@ mod test {
         let text2 =
             "Level: 1  Gold: 0      Hp: 12(12)  Str: 16(16)  Arm: 4   Exp: 1/0               ";
         let parser = StatusParse::new();
-        let res = PlayerStatus { stage_level: 3,
-                                 gold: 237,
-                                 cur_hp: 18,
-                                 max_hp: 25,
-                                 cur_str: 16,
-                                 max_str: 16,
-                                 arm: 4,
-                                 exp_level: 3,
-                                 exp: 23,
-                                 hungry: true, };
+        let res = PlayerStatus {
+            stage_level: 3,
+            gold: 237,
+            cur_hp: 18,
+            max_hp: 25,
+            cur_str: 16,
+            max_str: 16,
+            arm: 4,
+            exp_level: 3,
+            exp: 23,
+            hungry_level: 1,
+        };
         assert_eq!(res, parser.parse(text1).unwrap());
-        assert_eq!(parser.parse(text2).unwrap(), PlayerStatus::default());
+        assert_eq!(parser.parse(text2).unwrap(), PlayerStatus::new());
     }
     #[test]
     fn msg_test() {
-        let drink_msgs = vec!["Hey, this tastes great.  It make you feel warm all over--More--"];
+        let drink_msgs = vec![
+            "Hey, this tastes great.  It make you feel warm all over--More--",
+        ];
         let scroll_msgs = vec!["Your armor is covered by a shimmering gold shield"];
-        let msgs = vec!["The emu has injured you",
-                        "The emu swings and hits you",
-                        "The bat hit you",
-                        "The bat doesn't hit you",
-                        "The hobgoblin barely misses you",
-                        "Which direction?",
-                        "You barely miss the hobgoblin--More--",
-                        "You scored an excellent hit on the kestrel--More--",
-                        "You have defeated the emu",
-                        "You found 32 gold pieces",
-                        "You now have a yellow potion (g)",
-                        "You now have a scroll titled 'tuenes eepme' (h)",
-                        "You now have 2 scrolls titled 'org vly gopsehzok hasnatue' (o)--More--",
-                        "You now have scale mail (i)",
-                        "You now have a tiger eye ring (f)",
-                        "You now have 2 rations of food (a)--More--",
-                        "I see no monster there",
-                        "You are now wearing +1 ring mail [protection 4]",
-                        "You used to be wearing b) +1 ring mail [protection 4]",
-                        "Which object do you want to quaff? (* for list): ",
-                        "Welcome to level 4--More--",
-                        "You feel a bite in your leg and now feel weaker--More--",
-                        "Yum, that tasted good",
-                        "Your purse feels lighter",
-                        "What do you want to call it?",
-                        "There's no room in your pack--More--",
-                        "You moved onto splint mail"];
+        let trap_msgs = vec!["A small dart whizzes by your ear and vanishes"];
+        let msgs = vec![
+            "The emu has injured you",
+            "The emu swings and hits you",
+            "The bat hit you",
+            "The bat doesn't hit you",
+            "The hobgoblin barely misses you",
+            "Which direction?",
+            "You barely miss the hobgoblin--More--",
+            "You scored an excellent hit on the kestrel--More--",
+            "You have defeated the emu",
+            "You found 32 gold pieces",
+            "You now have a yellow potion (g)",
+            "You now have a scroll titled 'tuenes eepme' (h)",
+            "You now have 2 scrolls titled 'org vly gopsehzok hasnatue' (o)--More--",
+            "You now have scale mail (i)",
+            "You now have a tiger eye ring (f)",
+            "You now have 2 rations of food (a)--More--",
+            "I see no monster there",
+            "You are now wearing +1 ring mail [protection 4]",
+            "You used to be wearing b) +1 ring mail [protection 4]",
+            "Which object do you want to quaff? (* for list): ",
+            "Welcome to level 4--More--",
+            "You feel a bite in your leg and now feel weaker--More--",
+            "Yum, that tasted good",
+            "Your purse feels lighter",
+            "What do you want to call it?",
+            "There's no room in your pack--More--",
+            "You moved onto splint mail",
+        ];
         let parser = MsgParse::new();
         for s in msgs {
             println!("{}", s);
