@@ -1,6 +1,6 @@
 #![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
-#![feature(concat_idents)]
+
 #[macro_use]
 extern crate bitflags;
 #[macro_use]
@@ -17,7 +17,6 @@ mod data;
 mod parse;
 mod consts;
 mod agent;
-mod dangeon;
 
 use consts::*;
 use data::*;

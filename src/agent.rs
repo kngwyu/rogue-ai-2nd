@@ -27,17 +27,26 @@ impl Reactor for Agent {
         trace!(LOGGER, "{:?}", action_res);
         match action_res {
             ActionResult::Changed(map) => {
-                let msg_parsed = {
-                    let msg = str::from_utf8(&map[0]).unwrap();
-                    self.msg_parser.parse(msg)
+                match self.dangeon.fetch(&map) {
+                    DangeonMsg::Die => return Some(Action::Die.into()),
+                    _ => {}
+                }
+                let msg = {
+                    let msg_str = str::from_utf8(&map[0]).unwrap();
+                    let (msg, has_more) = self.msg_parser.parse(msg_str);
+                    if has_more {
+                        return Some(Action::Space.into());
+                    }
+                    msg
                 };
                 let stat_diff = {
-                    let stat = str::from_utf8(&map[LINES - 1]).unwrap();
-                    match self.stat_parser.parse(stat) {
+                    let stat_str = str::from_utf8(&map[LINES - 1]).unwrap();
+                    match self.stat_parser.parse(stat_str) {
                         Some(s) => self.player_stat.fetch(s),
                         None => return None,
                     }
                 };
+                for dist in Dist::vars() {}
             }
             ActionResult::NotChanged => {}
             ActionResult::GameEnded => {}

@@ -1,8 +1,12 @@
 // domain knowleadge
 // enemy data is from https://nethackwiki.com/wiki/Rogue_(game), thanks
 
-use std::ops::{Index, IndexMut, Sub};
+use std::ops::{Add, Index, IndexMut, Sub};
+use std::cmp::Ordering;
+use std::slice;
+use std::fmt::Debug;
 use consts::*;
+use cgw::AsciiChar;
 
 macro_rules! default_none {
     ($enum:ident) => {
@@ -14,11 +18,25 @@ macro_rules! default_none {
     };
 }
 
+macro_rules! enum_with_iter {
+    ($name: ident { $($var: ident),*$(,)*}) => {
+        #[derive(Debug, Copy, Clone)]
+        pub enum $name {
+            $($var),*,
+        }
+        impl $name {
+            pub fn vars() -> slice::Iter<'static, $name> {
+                static VARS: &'static [$name] = &[$($name::$var),*];
+                VARS.into_iter()
+            }
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Dice(i32, i32);
 
-#[derive(Debug, Copy, Clone)]
-pub enum Dist {
+enum_with_iter!(Dist {
     Up,
     Down,
     Left,
@@ -27,7 +45,7 @@ pub enum Dist {
     RightUp,
     LeftDown,
     RightDown,
-}
+});
 
 // 時計まわり
 impl From<u8> for Dist {
@@ -60,6 +78,24 @@ impl Into<u8> for Dist {
     }
 }
 
+impl Dist {
+    pub fn as_cd(&self) -> Coord {
+        macro_rules! cd {
+            ($x: expr, $y: expr) => (Coord {x: $x, y: $y})
+        }
+        match *self {
+            Dist::Up => cd!(0, -1),
+            Dist::RightUp => cd!(1, -1),
+            Dist::Right => cd!(1, 0),
+            Dist::RightDown => cd!(1, 1),
+            Dist::Down => cd!(0, 1),
+            Dist::LeftDown => cd!(-1, 1),
+            Dist::Left => cd!(-1, 0),
+            Dist::LeftUp => cd!(-1, -1),
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
 pub enum Action {
@@ -80,6 +116,13 @@ pub enum Action {
     DropObject(u8),
     SaveGame,
     Quit,
+    Die,
+    Space,
+}
+
+lazy_static! {
+    static ref ENTER: u8 = AsciiChar::CarriageReturn.as_byte();
+    static ref SPACE: u8 = AsciiChar::Space.as_byte();
 }
 
 impl Into<Vec<u8>> for Action {
@@ -101,7 +144,9 @@ impl Into<Vec<u8>> for Action {
             Action::RemoveRing => vec![b'R'],
             Action::DropObject(b) => vec![b'd', b],
             Action::SaveGame => vec![b'S'],
-            Action::Quit => vec![b'Q'],
+            Action::Quit => vec![b'Q', b'y'],
+            Action::Die => vec![*ENTER, *ENTER],
+            Action::Space => vec![*SPACE],
         }
     }
 }
@@ -290,7 +335,7 @@ impl Into<u8> for Enemy {
 }
 
 impl Enemy {
-    fn status(self) -> &'static EnemyStatus {
+    pub fn status(self) -> &'static EnemyStatus {
         let id: u8 = self.into();
         &ENEMIES[(id - b'A') as usize]
     }
@@ -298,12 +343,13 @@ impl Enemy {
 
 #[derive(Debug)]
 pub struct EnemyStatus {
-    pub treasure: i32,
-    pub attr: EnemyAttr,
-    pub exp: i32,
-    pub hp: Dice,
-    pub defence: i32,
-    pub attack: Vec<Dice>,
+    pub treasure: i32,     // gold
+    pub attr: EnemyAttr, // MEANとか ゲーム内でflag使わないでif文処理してるやつもこれで
+    pub exp: i32,        // 得られる経験値
+    pub lvl: i32,        // レベル (多分hit率以外には影響しない)
+    pub hp: Dice,        // ヒットポイント
+    pub defence: i32,    // アーマー(これも多分hit率だけ)
+    pub attack: Vec<Dice>, // 攻撃
 }
 
 bitflags! {
@@ -702,7 +748,7 @@ pub struct ExplHist {
     searched: u32,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Cell {
     obj: FieldObject,
     surface: Surface,
@@ -710,49 +756,168 @@ pub struct Cell {
 }
 
 pub struct Dangeon {
-    origin: Vec<Vec<u8>>,
     inner: Vec<Vec<Cell>>,
+    empty: bool,
 }
+
+pub trait CoordGet {
+    type Item;
+    fn get(&self, c: Coord) -> Option<Self::Item>;
+}
+
+pub trait CoordGetMut {
+    type Item;
+    fn get_mut(&mut self, c: Coord) -> Option<&mut Self::Item>;
+}
+
+// innerへのアクセスは
+// let d = Dangeon::default();
+// let c = d.get(Coord(0, 0));
+// のみ
 
 impl Default for Dangeon {
     fn default() -> Dangeon {
         Dangeon {
-            origin: vec![vec![Surface::blank(); COLUMNS]; LINES],
             inner: vec![vec![Cell::default(); COLUMNS]; LINES],
+            empty: true,
         }
     }
 }
 
+pub enum DangeonMsg {
+    Die,
+    None,
+}
+
 impl Dangeon {
-    fn fetch(&mut self, orig: Vec<Vec<u8>>) {
+    pub fn is_empty(&self) -> bool {
+        self.empty
+    }
+    pub fn fetch(&mut self, orig: &Vec<Vec<u8>>) -> DangeonMsg {
         for i in 0..LINES {
             for j in 0..COLUMNS {
+                if orig[i][j] == b'/' {
+                    return DangeonMsg::Die;
+                }
                 self.inner[i][j].obj = FieldObject::from(orig[i][j]);
                 if self.inner[i][j].surface == Surface::None {
                     self.inner[i][j].surface = Surface::from(orig[i][j]);
                 }
             }
         }
+        self.empty = false;
+        DangeonMsg::None
     }
 }
 
-impl Index<usize> for Dangeon {
-    type Output = Vec<Cell>;
-    fn index(&self, y: usize) -> &Vec<Cell> {
-        if y >= LINES {
-            &self.inner[LINES - 1]
-        } else {
-            &self.inner[y]
+impl CoordGet for Dangeon {
+    type Item = Cell;
+    fn get(&self, c: Coord) -> Option<Cell> {
+        if c.range_ok() {
+            return None;
+        }
+        Some(self.inner[c.y as usize][c.x as usize])
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SimpleMap<T: Copy + Debug> {
+    inner: Vec<Vec<T>>,
+}
+
+impl<T: Copy + Debug> SimpleMap<T> {
+    fn new(init_val: T) -> SimpleMap<T> {
+        SimpleMap {
+            inner: vec![vec![init_val; COLUMNS]; LINES],
+        }
+    }
+    fn range_ok(c: &Coord) -> bool {
+        c.x >= 0 && c.y >= 0 && c.x < COLUMNS as i32 && c.y < LINES as i32
+    }
+}
+
+impl<T: Copy + Debug> CoordGet for SimpleMap<T> {
+    type Item = T;
+    fn get(&self, c: Coord) -> Option<T> {
+        if c.range_ok() {
+            return None;
+        }
+        Some(self.inner[c.y as usize][c.x as usize])
+    }
+}
+
+impl<T: Copy + Debug> CoordGetMut for SimpleMap<T> {
+    type Item = T;
+    fn get_mut(&mut self, c: Coord) -> Option<&mut T> {
+        if c.range_ok() {
+            return None;
+        }
+        Some(&mut self.inner[c.y as usize][c.x as usize])
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Coord {
+    x: i32,
+    y: i32,
+}
+
+impl Coord {
+    fn new(x_: i32, y_: i32) -> Coord {
+        Coord { x: x_, y: y_ }
+    }
+    fn range_ok(&self) -> bool {
+        self.x >= 0 && self.y >= 0 && self.x < COLUMNS as i32 && self.y < LINES as i32
+    }
+}
+impl Add for Coord {
+    type Output = Coord; // Coord * Coord -> Coord
+    fn add(self, other: Coord) -> Coord {
+        Coord::new(self.x + other.x, self.y + other.y)
+    }
+}
+impl Sub for Coord {
+    type Output = Coord;
+    fn sub(self, other: Coord) -> Coord {
+        Coord::new(self.x - other.x, self.y - other.y)
+    }
+}
+impl PartialOrd for Coord {
+    fn partial_cmp(&self, other: &Coord) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Coord {
+    fn cmp(&self, other: &Coord) -> Ordering {
+        let xcmp = self.x.cmp(&other.x);
+        match xcmp {
+            Ordering::Equal => self.y.cmp(&other.y),
+            _ => xcmp,
         }
     }
 }
 
-impl IndexMut<usize> for Dangeon {
-    fn index_mut<'a>(&'a mut self, y: usize) -> &'a mut Vec<Cell> {
-        if y >= LINES {
-            &mut self.inner[LINES - 1]
-        } else {
-            &mut self.inner[y]
+// calc damage
+
+pub mod damage {
+    pub fn str_plus(strength: i32) -> Option<i32> {
+        const STR_PLUS: [i32; 32] = [
+            -7, -6, -5, -4, -3, -2, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2,
+            2, 2, 2, 2, 3,
+        ];
+        if strength <= 0 || strength > 32 {
+            return None;
         }
+        Some(STR_PLUS[strength as usize - 1])
+    }
+    pub fn add_dam(strength: i32) -> Option<i32> {
+        const ADD_DAM: [i32; 32] = [
+            -7, -6, -5, -4, -3, -2, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 3, 3, 4, 5, 5, 5, 5, 5,
+            5, 5, 5, 5, 6,
+        ];
+        if strength <= 0 || strength > 32 {
+            return None;
+        }
+        Some(ADD_DAM[strength as usize - 1])
     }
 }
