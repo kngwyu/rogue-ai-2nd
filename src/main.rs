@@ -17,6 +17,7 @@ mod data;
 mod parse;
 mod consts;
 mod agent;
+mod dangeon;
 
 use consts::*;
 use data::*;

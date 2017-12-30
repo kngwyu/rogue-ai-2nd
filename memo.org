@@ -21,7 +21,7 @@
       - weapはweapon hurlは投げるならTRUE
       - "1x6/3x4" のようなダイス文字列をatoiで読んでループをまわす
     - 当たり判定
-      - swing(att->s_level, def_arm, hplus + str_plus[..])
+      - swing(att->s_lvl, def_arm, hplus + str_plus[..])
       - レベル、敵のアーマー、武器の命中率補正+強さ補正
         - 武器の命中率補正は通常1 ランダム生成時は -rnd(3)+1(10%)またはrnd(3)+1(5%)または0
         - 自分なら1敵なら0が無難？
@@ -32,10 +32,15 @@
       - rnd(20) + 補正 >= 20 - レベル - アーマー で 成功 なので
       - rnd(20) >= 20 - レベル - アーマー 補正で成功
     - ダメージ計算
-      - 
+      - dplus + ダイス値 + add_dam(強さ補正)
+      - dplusは武器の補正値 
   - 敵→自分
     - roll_em (THING* mp, &player, NULL, FALSE)
 - モンスターの生成(new_monser in monster.c)
   - レベルは26階以下では1ずつ補正がかかるが、それまでは固定
-  - HPは固有のダイス値で決定
-  - 経験値は規定の値+(26階以上補正)+(lvl=1->max_hp/8 lvl=2..6->max_hp/6 lvl=7..9->max_hp*2/3 それ以上->maxhp*10/3)
+  - HPは固有レベルをダイス値として×8
+  - 経験値は規定の値+(27階以上補正)+(lvl=1->max_hp/8 lvl=2..6->max_hp/6 lvl=7..9->max_hp*2/3 それ以上->maxhp*10/3)
+- モンスターが動き出すかどうかの判定
+  - !on(*tp, ISRUN) && rnd(3) != 0 && on(*tp, ISMEAN) &&..
+    - つまりMEANでも33%の確率でプレイヤーに近づき出さない
+  - MedusaとGreedyなMonsterは特殊判定あり

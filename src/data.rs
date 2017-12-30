@@ -1,11 +1,9 @@
 // domain knowleadge
 // enemy data is from https://nethackwiki.com/wiki/Rogue_(game), thanks
 
-use std::ops::{Add, Index, IndexMut, Sub};
-use std::cmp::Ordering;
+use std::ops::Sub;
 use std::slice;
-use std::fmt::Debug;
-use consts::*;
+use dangeon::Coord;
 use cgw::AsciiChar;
 
 macro_rules! default_none {
@@ -47,33 +45,17 @@ enum_with_iter!(Dist {
     RightDown,
 });
 
-// 時計まわり
-impl From<u8> for Dist {
-    fn from(d: u8) -> Self {
-        match d {
-            0u8 => Dist::Up,
-            1u8 => Dist::RightUp,
-            2u8 => Dist::Right,
-            3u8 => Dist::RightDown,
-            4u8 => Dist::Down,
-            5u8 => Dist::LeftDown,
-            6u8 => Dist::Left,
-            _ => Dist::LeftUp,
-        }
-    }
-}
-
 impl Into<u8> for Dist {
     fn into(self) -> u8 {
         match self {
-            Dist::Up => 0,
-            Dist::RightUp => 1,
-            Dist::Right => 2,
-            Dist::RightDown => 3,
-            Dist::Down => 4,
-            Dist::LeftDown => 5,
-            Dist::Left => 6,
-            Dist::LeftUp => 7,
+            Dist::Up => b'k',
+            Dist::Down => b'j',
+            Dist::Left => b'h',
+            Dist::Right => b'l',
+            Dist::LeftUp => b'y',
+            Dist::RightUp => b'u',
+            Dist::LeftDown => b'b',
+            Dist::RightDown => b'n',
         }
     }
 }
@@ -346,10 +328,27 @@ pub struct EnemyStatus {
     pub treasure: i32,     // gold
     pub attr: EnemyAttr, // MEANとか ゲーム内でflag使わないでif文処理してるやつもこれで
     pub exp: i32,        // 得られる経験値
-    pub lvl: i32,        // レベル (多分hit率以外には影響しない)
-    pub hp: Dice,        // ヒットポイント
+    pub level: i32,      // レベル (多分hit率およびhp)
     pub defence: i32,    // アーマー(これも多分hit率だけ)
     pub attack: Vec<Dice>, // 攻撃
+}
+
+pub struct EnemyHist {
+    pub name: Enemy,
+    pub attacked: i32,
+    pub cd: Coord,
+    pub visible: bool,
+}
+
+impl EnemyHist {
+    fn new(name: Enemy, cd: Coord) -> EnemyHist {
+        EnemyHist {
+            name: name,
+            attacked: 0,
+            cd: cd,
+            visible: true,
+        }
+    }
 }
 
 bitflags! {
@@ -378,213 +377,223 @@ impl From<Vec<EnemyAttr>> for EnemyAttr {
     }
 }
 
+macro_rules! enem_attr {
+    () => (EnemyAttr::NONE);
+    ($x:ident) => (EnemyAttr::$x);
+    ($x:ident, $($y:ident),*) => ({
+        let mut res = enem_attr!($($y),*);
+        res.insert(EnemyAttr::$x);
+        res
+    })
+}
+
 lazy_static!{
     static ref ENEMIES: [EnemyStatus; 26] =[
         EnemyStatus { // Aquator
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::MEAN, EnemyAttr::RUSTS_ARMOR]),
+            attr: enem_attr!(MEAN, RUSTS_ARMOR),
             exp: 20,
-            hp: Dice(5, 8),
+            level: 5,
             defence: 2,
             attack: vec![Dice(0, 0)],
         },
         EnemyStatus { // Bat
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::FLYING, EnemyAttr::RANDOM]),
+            attr: enem_attr!(FLYING, RANDOM),
             exp: 1,
-            hp: Dice(1, 8),
+            level: 1,
             defence: 3,
             attack: vec![Dice(1, 2)],
         },
         EnemyStatus { // Centaur
             treasure: 15,
-            attr: EnemyAttr::from(vec![]),
+            attr: enem_attr!(),
             exp: 17,
-            hp: Dice(4, 8),
+            level: 4,
             defence: 4,
             attack: vec![Dice(1, 2), Dice(1, 5), Dice(1, 5)],
         },
         EnemyStatus { // Dragon
             treasure: 100,
-            attr: EnemyAttr::from(vec![EnemyAttr::MEAN]),
+            attr: enem_attr!(MEAN),
             exp: 5000,
-            hp: Dice(10, 8),
+            level: 10,
             defence: 3,
             attack: vec![Dice(1, 8), Dice(1, 8), Dice(3, 10)],
         },
         EnemyStatus { // Emu
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::MEAN]),
+            attr: enem_attr!(MEAN),
             exp: 2,
-            hp: Dice(1, 8),
+            level: 1,
             defence: 7,
             attack: vec![Dice(1, 2)],
         },
         EnemyStatus { // Venus Flytrap
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::MEAN]),
+            attr: enem_attr!(MEAN),
             exp: 80,
-            hp: Dice(8, 8),
+            level: 8,
             defence: 3,
             attack: vec![], // special
         },
         EnemyStatus { // Griffin
             treasure: 20,
-            attr: EnemyAttr::from(vec![EnemyAttr::FLYING, EnemyAttr::MEAN, EnemyAttr::REGENERATE]),
+            attr: enem_attr!(FLYING, MEAN, REGENERATE),
             exp: 2000,
-            hp: Dice(13, 8),
+            level: 13,
             defence: 2,
             attack: vec![Dice(4, 3), Dice(3, 5)],
         },
         EnemyStatus { // Hobgoblin
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::MEAN]),
+            attr: enem_attr!(MEAN),
             exp: 3,
-            hp: Dice(1, 8),
+            level: 1,
             defence: 5,
             attack: vec![Dice(1, 8)],
         },
         EnemyStatus { // Icemonster
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::FREEZES]),
+            attr: enem_attr!(FREEZES),
             exp: 5,
-            hp: Dice(1, 8),
+            level: 1,
             defence: 9,
             attack: vec![Dice(0, 0)],
         },
         EnemyStatus { // Jabberwock
             treasure: 70,
-            attr: EnemyAttr::from(vec![]),
+            attr: enem_attr!(),
             exp: 3000,
-            hp: Dice(15, 8),
+            level: 15,
             defence: 6,
             attack: vec![Dice(2, 12), Dice(2, 4)],
         },
         EnemyStatus { // Kestrel
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::FLYING, EnemyAttr::MEAN]),
+            attr: enem_attr!(),
             exp: 1,
-            hp: Dice(1, 8),
+            level: 1,
             defence: 7,
             attack: vec![Dice(1, 4)],
         },
         EnemyStatus { // Leperachaun
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::STEAL_GOLD]),
+            attr: enem_attr!(STEAL_GOLD),
             exp: 10,
-            hp: Dice(3, 8),
+            level: 3,
             defence: 8,
             attack: vec![Dice(1, 1)],
         },
         EnemyStatus { // Medusa
             treasure: 40,
-            attr: EnemyAttr::from(vec![EnemyAttr::MEAN]),
+            attr: enem_attr!(MEAN),
             exp: 200,
-            hp: Dice(8, 8),
+            level: 8,
             defence: 2,
             attack: vec![Dice(3, 4), Dice(3, 4), Dice(2, 5)],
         },
         EnemyStatus { // Nymph
             treasure: 100,
-            attr: EnemyAttr::from(vec![]),
-            exp: 200,
-            hp: Dice(3, 8),
+            attr: enem_attr!(),
+            exp: 37,
+            level: 3,
             defence: 9,
             attack: vec![Dice(0, 0)],
         },
         EnemyStatus { // Orc
             treasure: 15,
-            attr: EnemyAttr::from(vec![EnemyAttr::GREEDY]),
+            attr: enem_attr!(GREEDY),
             exp: 5,
-            hp: Dice(1, 8),
+            level: 1,
             defence: 6,
             attack: vec![Dice(1, 8)],
         },
         EnemyStatus { // Phantom
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::INVISIBLE]),
+            attr: enem_attr!(INVISIBLE),
             exp: 120,
-            hp: Dice(8, 8),
+            level: 8,
             defence: 3,
             attack: vec![Dice(4, 4)],
         },
         EnemyStatus { // Quagga
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::MEAN]),
+            attr: enem_attr!(MEAN),
             exp: 15,
-            hp: Dice(3, 8),
+            level: 3,
             defence: 3,
             attack: vec![Dice(1, 5), Dice(1, 5)],
         },
         EnemyStatus { // Rattlesnake
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::MEAN, EnemyAttr::REDUCE_STR]),
+            attr: enem_attr!(REDUCE_STR, MEAN),
             exp: 9,
-            hp: Dice(2, 8),
+            level: 2,
             defence: 3,
             attack: vec![Dice(1, 6)],
         },
         EnemyStatus { // Snake
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::MEAN]),
+            attr: enem_attr!(MEAN),
             exp: 2,
-            hp: Dice(1, 8),
+            level: 1,
             defence: 5,
             attack: vec![Dice(1, 3)],
         },
         EnemyStatus { // Troll
             treasure: 50,
-            attr: EnemyAttr::from(vec![EnemyAttr::REGENERATE, EnemyAttr::MEAN]),
+            attr: enem_attr!(MEAN, REGENERATE),
             exp: 120,
-            hp: Dice(6, 8),
+            level: 6,
             defence: 4,
             attack: vec![Dice(1, 8), Dice(1, 8), Dice(2, 6)],
         },
-        EnemyStatus { // Urvile
+        EnemyStatus { // Urvile (Black Unicorn)
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::MEAN]),
+            attr: enem_attr!(MEAN),
             exp: 190,
-            hp: Dice(7, 8),
+            level: 7,
             defence: -2,
             attack: vec![Dice(1, 9), Dice(1, 9), Dice(2, 9)],
         },
         EnemyStatus { // Vampire
             treasure: 20,
-            attr: EnemyAttr::from(vec![EnemyAttr::REGENERATE, EnemyAttr::MEAN]),
+            attr: enem_attr!(MEAN, REGENERATE),
             exp: 350,
-            hp: Dice(8, 8),
+            level: 8,
             defence: 1,
             attack: vec![Dice(1, 19)],
         },
         EnemyStatus { // Wraith
             treasure: 0,
-            attr: EnemyAttr::from(vec![]),
+            attr: enem_attr!(),
             exp: 55,
-            hp: Dice(5, 8),
+            level: 5,
             defence: 4,
             attack: vec![Dice(1, 6)],
         },
         EnemyStatus { // Xeroc
             treasure: 30,
-            attr: EnemyAttr::from(vec![]),
+            attr: enem_attr!(),
             exp: 100,
-            hp: Dice(7, 8),
+            level: 7,
             defence: 7,
             attack: vec![Dice(4, 4)],
         },
         EnemyStatus { // Yeti
             treasure: 30,
-            attr: EnemyAttr::from(vec![]),
+            attr: enem_attr!(),
             exp: 50,
-            hp: Dice(4, 8),
+            level: 4,
             defence: 6,
             attack: vec![Dice(1, 6), Dice(1, 6)],
         },
         EnemyStatus { // Zombie
             treasure: 0,
-            attr: EnemyAttr::from(vec![EnemyAttr::MEAN]),
+            attr: enem_attr!(MEAN),
             exp: 6,
-            hp: Dice(2, 8),
+            level: 2,
             defence: 8,
             attack: vec![Dice(1, 8)],
         }
@@ -623,6 +632,18 @@ impl From<u8> for Item {
         }
     }
 }
+
+pub struct ItemPack {
+    name: Item,
+    id: u8,
+}
+
+impl ItemPack {
+    pub fn new(name: Item, id: u8) -> ItemPack {
+        ItemPack { name: name, id: id }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Weapon {
     Mace,
@@ -725,180 +746,7 @@ impl From<u8> for FieldObject {
     }
 }
 
-bitflags! {
-    pub struct ExplAttr: u8 {
-        const NONE = 0;
-        const VISITED  = 0b000001;
-        const GO_UP    = 0b000010;
-        const GO_RIGHT = 0b000100;
-        const GO_LEFT  = 0b001000;
-        const GO_DOWN  = 0b010000;
-    }
-}
-
-impl Default for ExplAttr {
-    fn default() -> ExplAttr {
-        ExplAttr::NONE
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ExplHist {
-    attr: ExplAttr,
-    searched: u32,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Cell {
-    obj: FieldObject,
-    surface: Surface,
-    hist: ExplHist,
-}
-
-pub struct Dangeon {
-    inner: Vec<Vec<Cell>>,
-    empty: bool,
-}
-
-pub trait CoordGet {
-    type Item;
-    fn get(&self, c: Coord) -> Option<Self::Item>;
-}
-
-pub trait CoordGetMut {
-    type Item;
-    fn get_mut(&mut self, c: Coord) -> Option<&mut Self::Item>;
-}
-
-// innerへのアクセスは
-// let d = Dangeon::default();
-// let c = d.get(Coord(0, 0));
-// のみ
-
-impl Default for Dangeon {
-    fn default() -> Dangeon {
-        Dangeon {
-            inner: vec![vec![Cell::default(); COLUMNS]; LINES],
-            empty: true,
-        }
-    }
-}
-
-pub enum DangeonMsg {
-    Die,
-    None,
-}
-
-impl Dangeon {
-    pub fn is_empty(&self) -> bool {
-        self.empty
-    }
-    pub fn fetch(&mut self, orig: &Vec<Vec<u8>>) -> DangeonMsg {
-        for i in 0..LINES {
-            for j in 0..COLUMNS {
-                if orig[i][j] == b'/' {
-                    return DangeonMsg::Die;
-                }
-                self.inner[i][j].obj = FieldObject::from(orig[i][j]);
-                if self.inner[i][j].surface == Surface::None {
-                    self.inner[i][j].surface = Surface::from(orig[i][j]);
-                }
-            }
-        }
-        self.empty = false;
-        DangeonMsg::None
-    }
-}
-
-impl CoordGet for Dangeon {
-    type Item = Cell;
-    fn get(&self, c: Coord) -> Option<Cell> {
-        if c.range_ok() {
-            return None;
-        }
-        Some(self.inner[c.y as usize][c.x as usize])
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct SimpleMap<T: Copy + Debug> {
-    inner: Vec<Vec<T>>,
-}
-
-impl<T: Copy + Debug> SimpleMap<T> {
-    fn new(init_val: T) -> SimpleMap<T> {
-        SimpleMap {
-            inner: vec![vec![init_val; COLUMNS]; LINES],
-        }
-    }
-    fn range_ok(c: &Coord) -> bool {
-        c.x >= 0 && c.y >= 0 && c.x < COLUMNS as i32 && c.y < LINES as i32
-    }
-}
-
-impl<T: Copy + Debug> CoordGet for SimpleMap<T> {
-    type Item = T;
-    fn get(&self, c: Coord) -> Option<T> {
-        if c.range_ok() {
-            return None;
-        }
-        Some(self.inner[c.y as usize][c.x as usize])
-    }
-}
-
-impl<T: Copy + Debug> CoordGetMut for SimpleMap<T> {
-    type Item = T;
-    fn get_mut(&mut self, c: Coord) -> Option<&mut T> {
-        if c.range_ok() {
-            return None;
-        }
-        Some(&mut self.inner[c.y as usize][c.x as usize])
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Coord {
-    x: i32,
-    y: i32,
-}
-
-impl Coord {
-    fn new(x_: i32, y_: i32) -> Coord {
-        Coord { x: x_, y: y_ }
-    }
-    fn range_ok(&self) -> bool {
-        self.x >= 0 && self.y >= 0 && self.x < COLUMNS as i32 && self.y < LINES as i32
-    }
-}
-impl Add for Coord {
-    type Output = Coord; // Coord * Coord -> Coord
-    fn add(self, other: Coord) -> Coord {
-        Coord::new(self.x + other.x, self.y + other.y)
-    }
-}
-impl Sub for Coord {
-    type Output = Coord;
-    fn sub(self, other: Coord) -> Coord {
-        Coord::new(self.x - other.x, self.y - other.y)
-    }
-}
-impl PartialOrd for Coord {
-    fn partial_cmp(&self, other: &Coord) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for Coord {
-    fn cmp(&self, other: &Coord) -> Ordering {
-        let xcmp = self.x.cmp(&other.x);
-        match xcmp {
-            Ordering::Equal => self.y.cmp(&other.y),
-            _ => xcmp,
-        }
-    }
-}
-
 // calc damage
-
 pub mod damage {
     pub fn str_plus(strength: i32) -> Option<i32> {
         const STR_PLUS: [i32; 32] = [

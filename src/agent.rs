@@ -1,5 +1,6 @@
 use consts::*;
 use data::*;
+use dangeon::*;
 use parse::{MsgParse, StatusParse};
 use cgw::{ActionResult, Reactor};
 use std::str;
@@ -9,6 +10,8 @@ pub struct Agent {
     msg_parser: MsgParse,
     player_stat: PlayerStatus,
     dangeon: Dangeon,
+    enemies: Vec<EnemyHist>,
+    items: Vec<ItemPack>,
 }
 
 impl Agent {
@@ -18,7 +21,16 @@ impl Agent {
             msg_parser: MsgParse::new(),
             player_stat: PlayerStatus::new(),
             dangeon: Dangeon::default(),
+            enemies: Vec::new(),
+            items: Vec::new(),
         }
+    }
+}
+
+impl Agent {
+    fn action_sub(&mut self) {}
+    fn fetch_enemy(enem_hist: &mut Vec<EnemyHist>, dangeon: &Dangeon) {
+        let mut used = vec![false; enem_hist.len()];
     }
 }
 
@@ -27,7 +39,7 @@ impl Reactor for Agent {
         trace!(LOGGER, "{:?}", action_res);
         match action_res {
             ActionResult::Changed(map) => {
-                match self.dangeon.fetch(&map) {
+                match self.dangeon.fetch(&map[1..(LINES + 1)]) {
                     DangeonMsg::Die => return Some(Action::Die.into()),
                     _ => {}
                 }
@@ -39,6 +51,15 @@ impl Reactor for Agent {
                     }
                     msg
                 };
+                match msg {
+                    Msg::Item(itemw) => {
+                        let item = itemw.0;
+                        let id = itemw.2;
+                        let new_item = ItemPack::new(item, id);
+                        self.items.push(new_item);
+                    }
+                    _ => {}
+                }
                 let stat_diff = {
                     let stat_str = str::from_utf8(&map[LINES - 1]).unwrap();
                     match self.stat_parser.parse(stat_str) {

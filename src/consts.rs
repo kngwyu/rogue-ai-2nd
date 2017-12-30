@@ -41,4 +41,4 @@ lazy_static!{
 }
 
 pub const COLUMNS: usize = 80;
-pub const LINES: usize = 24;
+pub const LINES: usize = 22;
