@@ -1,6 +1,7 @@
 use std::ops::{Add, Sub};
 use std::fmt::Debug;
 use std::cmp::Ordering;
+use std::mem;
 use consts::*;
 use data::*;
 
@@ -52,6 +53,7 @@ impl Cell {
             Dist::RightUp => ExplAttr::RIGHT_UP,
             Dist::LeftDown => ExplAttr::LEFT_DOWN,
             Dist::RightDown => ExplAttr::RIGHT_DOWN,
+            Dist::Stay => return,
         };
         self.hist.attr.insert(ins);
     }
@@ -64,19 +66,19 @@ impl Cell {
     }
 }
 
-pub struct Dangeon {
-    inner: Vec<Vec<Cell>>,
-    empty: bool,
-}
-
 pub trait CoordGet {
     type Item;
-    fn get(&self, c: Coord) -> Option<Self::Item>;
+    fn get(&self, c: Coord) -> Option<&Self::Item>;
 }
 
 pub trait CoordGetMut {
     type Item;
     fn get_mut(&mut self, c: Coord) -> Option<&mut Self::Item>;
+}
+
+pub struct Dangeon {
+    inner: Vec<Vec<Cell>>,
+    empty: bool,
 }
 
 // innerへのアクセスは
@@ -93,6 +95,26 @@ impl Default for Dangeon {
     }
 }
 
+impl CoordGet for Dangeon {
+    type Item = Cell;
+    fn get(&self, c: Coord) -> Option<&Cell> {
+        if c.range_ok() {
+            return None;
+        }
+        Some(&self.inner[c.y as usize][c.x as usize])
+    }
+}
+
+impl CoordGetMut for Dangeon {
+    type Item = Cell;
+    fn get_mut(&mut self, c: Coord) -> Option<&mut Cell> {
+        if c.range_ok() {
+            return None;
+        }
+        Some(&mut self.inner[c.y as usize][c.x as usize])
+    }
+}
+
 pub enum DangeonMsg {
     Die,
     None,
@@ -103,29 +125,36 @@ impl Dangeon {
         self.empty
     }
     pub fn fetch(&mut self, orig: &[Vec<u8>]) -> DangeonMsg {
-        for i in 0..LINES {
-            for j in 0..COLUMNS {
-                if orig[i][j] == b'/' {
-                    return DangeonMsg::Die;
-                }
-                self.inner[i][j].obj = FieldObject::from(orig[i][j]);
-                if self.inner[i][j].surface == Surface::None {
-                    self.inner[i][j].surface = Surface::from(orig[i][j]);
-                }
+        for (cell_mut, cd) in self.iter_mut() {
+            let c = orig[cd.y as usize][cd.x as usize];
+            if c == b'/' {
+                return DangeonMsg::Die;
+            }
+            cell_mut.obj = FieldObject::from(c);
+            if cell_mut.surface == Surface::None {
+                cell_mut.surface = Surface::from(c);
             }
         }
         self.empty = false;
         DangeonMsg::None
     }
-}
-
-impl CoordGet for Dangeon {
-    type Item = Cell;
-    fn get(&self, c: Coord) -> Option<Cell> {
-        if c.range_ok() {
-            return None;
+    pub fn init(&mut self) {
+        for (cell_mut, _) in self.iter_mut() {
+            *cell_mut = Cell::default();
         }
-        Some(self.inner[c.y as usize][c.x as usize])
+        self.empty = true;
+    }
+    pub fn iter(&self) -> CoordIter<Dangeon> {
+        CoordIter {
+            content: &self,
+            cd: Coord::default(),
+        }
+    }
+    pub fn iter_mut<'a>(&'a mut self) -> CoordIterMut<Dangeon> {
+        CoordIterMut {
+            content: self,
+            cd: Coord::default(),
+        }
     }
 }
 
@@ -135,7 +164,7 @@ pub struct SimpleMap<T: Copy + Debug> {
 }
 
 impl<T: Copy + Debug> SimpleMap<T> {
-    fn new(init_val: T) -> SimpleMap<T> {
+    pub fn new(init_val: T) -> SimpleMap<T> {
         SimpleMap {
             inner: vec![vec![init_val; COLUMNS]; LINES],
         }
@@ -147,11 +176,11 @@ impl<T: Copy + Debug> SimpleMap<T> {
 
 impl<T: Copy + Debug> CoordGet for SimpleMap<T> {
     type Item = T;
-    fn get(&self, c: Coord) -> Option<T> {
+    fn get(&self, c: Coord) -> Option<&T> {
         if c.range_ok() {
             return None;
         }
-        Some(self.inner[c.y as usize][c.x as usize])
+        Some(&self.inner[c.y as usize][c.x as usize])
     }
 }
 
@@ -177,43 +206,59 @@ impl<'a, T> Iterator for CoordIter<'a, T>
 where
     T: CoordGet + 'a,
 {
-    type Item = T::Item;
-    fn next(&mut self) -> Option<T::Item> {
+    type Item = (&'a T::Item, Coord);
+    fn next(&mut self) -> Option<(&'a T::Item, Coord)> {
         self.cd.x += 1;
         if self.cd.x >= COLUMNS as _ {
             self.cd.x = 0;
             self.cd.y += 1;
         }
-        if !self.cd.range_ok() {
-            return None;
-        }
-        self.content.get(self.cd)
+        Some((self.content.get(self.cd)?, self.cd))
     }
 }
 
 pub struct CoordIterMut<'a, T>
 where
-    T: CoordGet + 'a,
+    T: CoordGetMut + 'a,
 {
-    content: &'a T,
+    content: &'a mut T,
     cd: Coord,
 }
 
 impl<'a, T> Iterator for CoordIterMut<'a, T>
 where
-    T: CoordGet + 'a,
+    T: CoordGetMut + 'a,
 {
-    type Item = T::Item;
-    fn next(&mut self) -> Option<T::Item> {
+    type Item = (&'a mut T::Item, Coord);
+    fn next(&mut self) -> Option<(&'a mut T::Item, Coord)> {
         self.cd.x += 1;
         if self.cd.x >= COLUMNS as _ {
             self.cd.x = 0;
             self.cd.y += 1;
         }
-        if !self.cd.range_ok() {
-            return None;
+        let mut cell = self.content.get_mut(self.cd)?;
+        // Some(&mut cell)
+        unsafe { Some((mem::transmute(&mut cell), self.cd)) }
+    }
+}
+
+pub trait MutIterator<'a, T> {
+    type Item;
+    fn next(&'a mut self) -> Option<&'a mut Self::Item>;
+}
+
+impl<'a, T> MutIterator<'a, T> for CoordIterMut<'a, T>
+where
+    T: CoordGetMut + 'a,
+{
+    type Item = T::Item;
+    fn next(&'a mut self) -> Option<&'a mut T::Item> {
+        self.cd.x += 1;
+        if self.cd.x >= COLUMNS as _ {
+            self.cd.x = 0;
+            self.cd.y += 1;
         }
-        self.content.get(self.cd)
+        self.content.get_mut(self.cd)
     }
 }
 
