@@ -35,6 +35,7 @@ macro_rules! enum_with_iter {
 pub struct Dice(i32, i32);
 
 enum_with_iter!(Dist {
+    Stay,
     Up,
     Down,
     Left,
@@ -48,6 +49,7 @@ enum_with_iter!(Dist {
 impl Into<u8> for Dist {
     fn into(self) -> u8 {
         match self {
+            Dist::Stay => b'.',
             Dist::Up => b'k',
             Dist::Down => b'j',
             Dist::Left => b'h',
@@ -65,15 +67,31 @@ impl Dist {
         macro_rules! cd {
             ($x: expr, $y: expr) => (Coord {x: $x, y: $y})
         }
+        use Dist::*;
         match *self {
-            Dist::Up => cd!(0, -1),
-            Dist::RightUp => cd!(1, -1),
-            Dist::Right => cd!(1, 0),
-            Dist::RightDown => cd!(1, 1),
-            Dist::Down => cd!(0, 1),
-            Dist::LeftDown => cd!(-1, 1),
-            Dist::Left => cd!(-1, 0),
-            Dist::LeftUp => cd!(-1, -1),
+            Stay => cd!(0, 0),
+            Up => cd!(0, -1),
+            RightUp => cd!(1, -1),
+            Right => cd!(1, 0),
+            RightDown => cd!(1, 1),
+            Down => cd!(0, 1),
+            LeftDown => cd!(-1, 1),
+            Left => cd!(-1, 0),
+            LeftUp => cd!(-1, -1),
+        }
+    }
+    pub fn rotate(&self) -> Dist {
+        use Dist::*;
+        match *self {
+            Up => RightUp,
+            RightUp => Right,
+            Right => RightDown,
+            RightDown => Down,
+            Down => LeftDown,
+            LeftDown => Left,
+            Left => LeftUp,
+            LeftUp => Up,
+            Stay => Stay,
         }
     }
 }
@@ -100,6 +118,7 @@ pub enum Action {
     Quit,
     Die,
     Space,
+    None,
 }
 
 lazy_static! {
@@ -129,6 +148,7 @@ impl Into<Vec<u8>> for Action {
             Action::Quit => vec![b'Q', b'y'],
             Action::Die => vec![*ENTER, *ENTER],
             Action::Space => vec![*SPACE],
+            Action::None => vec![],
         }
     }
 }
@@ -333,6 +353,12 @@ pub struct EnemyStatus {
     pub attack: Vec<Dice>, // 攻撃
 }
 
+impl EnemyStatus {
+    pub fn has_attr(&self, attr: EnemyAttr) -> bool {
+        self.attr.contains(attr)
+    }
+}
+
 pub struct EnemyHist {
     pub name: Enemy,
     pub attacked: i32,
@@ -341,7 +367,7 @@ pub struct EnemyHist {
 }
 
 impl EnemyHist {
-    fn new(name: Enemy, cd: Coord) -> EnemyHist {
+    pub fn new(name: Enemy, cd: Coord) -> EnemyHist {
         EnemyHist {
             name: name,
             attacked: 0,
@@ -633,6 +659,7 @@ impl From<u8> for Item {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct ItemPack {
     name: Item,
     id: u8,
