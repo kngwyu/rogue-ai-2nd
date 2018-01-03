@@ -1,4 +1,4 @@
-use std::ops::{Add, Sub};
+use std::ops::{Add, AddAssign, Sub, SubAssign};
 use std::fmt::Debug;
 use std::cmp::Ordering;
 use std::mem;
@@ -81,40 +81,6 @@ pub struct Dangeon {
     empty: bool,
 }
 
-// innerへのアクセスは
-// let d = Dangeon::default();
-// let c = d.get(Coord(0, 0));
-// let mut c_ref = d.get_mut(Coord(0, 0));
-
-impl Default for Dangeon {
-    fn default() -> Dangeon {
-        Dangeon {
-            inner: vec![vec![Cell::default(); COLUMNS]; LINES],
-            empty: true,
-        }
-    }
-}
-
-impl CoordGet for Dangeon {
-    type Item = Cell;
-    fn get(&self, c: Coord) -> Option<&Cell> {
-        if c.range_ok() {
-            return None;
-        }
-        Some(&self.inner[c.y as usize][c.x as usize])
-    }
-}
-
-impl CoordGetMut for Dangeon {
-    type Item = Cell;
-    fn get_mut(&mut self, c: Coord) -> Option<&mut Cell> {
-        if c.range_ok() {
-            return None;
-        }
-        Some(&mut self.inner[c.y as usize][c.x as usize])
-    }
-}
-
 pub enum DangeonMsg {
     Die,
     None,
@@ -158,6 +124,40 @@ impl Dangeon {
     }
 }
 
+// innerへのアクセスは
+// let d = Dangeon::default();
+// let c = d.get(Coord(0, 0));
+// let mut c_ref = d.get_mut(Coord(0, 0));
+
+impl CoordGet for Dangeon {
+    type Item = Cell;
+    fn get(&self, c: Coord) -> Option<&Cell> {
+        if !c.range_ok() {
+            return None;
+        }
+        Some(&self.inner[c.y as usize][c.x as usize])
+    }
+}
+
+impl CoordGetMut for Dangeon {
+    type Item = Cell;
+    fn get_mut(&mut self, c: Coord) -> Option<&mut Cell> {
+        if !c.range_ok() {
+            return None;
+        }
+        Some(&mut self.inner[c.y as usize][c.x as usize])
+    }
+}
+
+impl Default for Dangeon {
+    fn default() -> Dangeon {
+        Dangeon {
+            inner: vec![vec![Cell::default(); COLUMNS]; LINES],
+            empty: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SimpleMap<T: Copy + Debug> {
     inner: Vec<Vec<T>>,
@@ -169,15 +169,24 @@ impl<T: Copy + Debug> SimpleMap<T> {
             inner: vec![vec![init_val; COLUMNS]; LINES],
         }
     }
-    fn range_ok(c: &Coord) -> bool {
-        c.x >= 0 && c.y >= 0 && c.x < COLUMNS as i32 && c.y < LINES as i32
+    pub fn iter(&self) -> CoordIter<SimpleMap<T>> {
+        CoordIter {
+            content: &self,
+            cd: Coord::default(),
+        }
+    }
+    pub fn iter_mut(&mut self) -> CoordIterMut<SimpleMap<T>> {
+        CoordIterMut {
+            content: self,
+            cd: Coord::default(),
+        }
     }
 }
 
 impl<T: Copy + Debug> CoordGet for SimpleMap<T> {
     type Item = T;
     fn get(&self, c: Coord) -> Option<&T> {
-        if c.range_ok() {
+        if !c.range_ok() {
             return None;
         }
         Some(&self.inner[c.y as usize][c.x as usize])
@@ -187,7 +196,7 @@ impl<T: Copy + Debug> CoordGet for SimpleMap<T> {
 impl<T: Copy + Debug> CoordGetMut for SimpleMap<T> {
     type Item = T;
     fn get_mut(&mut self, c: Coord) -> Option<&mut T> {
-        if c.range_ok() {
+        if !c.range_ok() {
             return None;
         }
         Some(&mut self.inner[c.y as usize][c.x as usize])
@@ -208,12 +217,13 @@ where
 {
     type Item = (&'a T::Item, Coord);
     fn next(&mut self) -> Option<(&'a T::Item, Coord)> {
+        let before = self.cd;
         self.cd.x += 1;
         if self.cd.x >= COLUMNS as _ {
             self.cd.x = 0;
             self.cd.y += 1;
         }
-        Some((self.content.get(self.cd)?, self.cd))
+        Some((self.content.get(before)?, before))
     }
 }
 
@@ -231,34 +241,14 @@ where
 {
     type Item = (&'a mut T::Item, Coord);
     fn next(&mut self) -> Option<(&'a mut T::Item, Coord)> {
+        let before = self.cd;
         self.cd.x += 1;
         if self.cd.x >= COLUMNS as _ {
             self.cd.x = 0;
             self.cd.y += 1;
         }
-        let mut cell = self.content.get_mut(self.cd)?;
-        // Some(&mut cell)
-        unsafe { Some((mem::transmute(&mut cell), self.cd)) }
-    }
-}
-
-pub trait MutIterator<'a, T> {
-    type Item;
-    fn next(&'a mut self) -> Option<&'a mut Self::Item>;
-}
-
-impl<'a, T> MutIterator<'a, T> for CoordIterMut<'a, T>
-where
-    T: CoordGetMut + 'a,
-{
-    type Item = T::Item;
-    fn next(&'a mut self) -> Option<&'a mut T::Item> {
-        self.cd.x += 1;
-        if self.cd.x >= COLUMNS as _ {
-            self.cd.x = 0;
-            self.cd.y += 1;
-        }
-        self.content.get_mut(self.cd)
+        let cell = self.content.get_mut(before)?;
+        unsafe { Some((mem::transmute(cell), before)) }
     }
 }
 
@@ -275,8 +265,16 @@ impl Coord {
             y: y.into(),
         }
     }
+
+    pub fn dist_iter(&self, d: Coord) -> DistIterator {
+        DistIterator {
+            cur: *self,
+            dist: d,
+        }
+    }
+
     fn range_ok(&self) -> bool {
-        self.x >= 0 && self.y >= 0 && self.x < COLUMNS as i32 && self.y < LINES as i32
+        self.x >= 0 && self.y >= 0 && self.x < COLUMNS as _ && self.y < LINES as _
     }
 }
 
@@ -286,12 +284,26 @@ impl Add for Coord {
         Coord::new(self.x + other.x, self.y + other.y)
     }
 }
+
+impl AddAssign for Coord {
+    fn add_assign(&mut self, other: Coord) {
+        *self = *self + other;
+    }
+}
+
 impl Sub for Coord {
     type Output = Coord;
     fn sub(self, other: Coord) -> Coord {
         Coord::new(self.x - other.x, self.y - other.y)
     }
 }
+
+impl SubAssign for Coord {
+    fn sub_assign(&mut self, other: Coord) {
+        *self = *self - other;
+    }
+}
+
 impl PartialOrd for Coord {
     fn partial_cmp(&self, other: &Coord) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -308,4 +320,36 @@ impl Ord for Coord {
     }
 }
 
-mod test {}
+pub struct DistIterator {
+    cur: Coord,
+    dist: Coord,
+}
+
+impl Iterator for DistIterator {
+    type Item = Coord;
+    fn next(&mut self) -> Option<Coord> {
+        if !self.cur.range_ok() {
+            return None;
+        }
+        let res = self.cur;
+        self.cur += self.dist;
+        Some(res)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn dangeon_test() {
+        use dangeon::*;
+        let mut d = Dangeon::default();
+        println!(">_<");
+        for (cell_ref, cd) in d.iter_mut() {
+            cell_ref.obj = FieldObject::Player;
+            println!("{:?}, {:?}", cell_ref, cd);
+        }
+        for cd in Coord::new(5, 5).dist_iter(Dist::Right.as_cd()) {
+            println!("{:?}", cd);
+        }
+    }
+}
