@@ -12,7 +12,6 @@ extern crate regex;
 #[macro_use]
 extern crate slog;
 extern crate sloggers;
-
 mod data;
 mod parse;
 mod consts;
@@ -22,8 +21,8 @@ mod dangeon;
 use consts::*;
 use data::*;
 use parse::*;
-use agent::Agent;
-use cgw::{ActionResult, GameSetting, LogType, OpenMode, Reactor};
+use agent::FeudalAgent as Agent;
+use cgw::{GameSetting, LogType, OpenMode};
 use std::time::Duration;
 use std::error::Error;
 fn main() {

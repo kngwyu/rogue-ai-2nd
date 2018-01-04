@@ -364,6 +364,7 @@ pub struct EnemyHist {
     pub attacked: i32,
     pub cd: Coord,
     pub visible: bool,
+    pub lock: bool,
 }
 
 impl EnemyHist {
@@ -373,6 +374,7 @@ impl EnemyHist {
             attacked: 0,
             cd: cd,
             visible: true,
+            lock: false,
         }
     }
 }
