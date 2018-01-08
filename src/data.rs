@@ -1,11 +1,11 @@
 // domain knowleadge
 // enemy data is from https://nethackwiki.com/wiki/Rogue_(game), thanks
 
-use std::ops::Sub;
 use std::slice;
 use dangeon::Coord;
 use cgw::AsciiChar;
-
+use damage::*;
+#[macro_export]
 macro_rules! default_none {
     ($enum:ident) => {
         impl Default for $enum {
@@ -18,7 +18,7 @@ macro_rules! default_none {
 
 macro_rules! enum_with_iter {
     ($name: ident { $($var: ident),*$(,)*}) => {
-        #[derive(Debug, Copy, Clone)]
+        #[derive(Debug, Copy, Clone, Eq, PartialEq)]
         pub enum $name {
             $($var),*,
         }
@@ -30,9 +30,6 @@ macro_rules! enum_with_iter {
         }
     }
 }
-
-#[derive(Copy, Clone, Debug)]
-pub struct Dice(i32, i32);
 
 enum_with_iter!(Dist {
     Stay,
@@ -96,7 +93,6 @@ impl Dist {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
 pub enum Action {
     Move(Dist),
@@ -120,6 +116,8 @@ pub enum Action {
     Space,
     None,
 }
+
+default_none!(Action);
 
 lazy_static! {
     static ref ENTER: u8 = AsciiChar::CarriageReturn.as_byte();
@@ -153,7 +151,7 @@ impl Into<Vec<u8>> for Action {
     }
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
 pub struct PlayerStatus {
     pub stage_level: i8,
     pub gold: i32,
@@ -167,9 +165,22 @@ pub struct PlayerStatus {
     pub hungry_level: i8,
 }
 
-impl Sub for PlayerStatus {
-    type Output = PlayerStatus;
-    fn sub(self, other: PlayerStatus) -> PlayerStatus {
+impl PlayerStatus {
+    pub fn new() -> PlayerStatus {
+        PlayerStatus {
+            stage_level: 1,
+            gold: 0,
+            cur_hp: 12,
+            max_hp: 12,
+            cur_str: 16,
+            max_str: 16,
+            arm: 4,
+            exp_level: 1,
+            exp: 0,
+            hungry_level: 0,
+        }
+    }
+    fn diff(&self, other: &PlayerStatus) -> PlayerStatus {
         let mut res = PlayerStatus::default();
         macro_rules! diff {
             ($name:ident) => {
@@ -188,39 +199,22 @@ impl Sub for PlayerStatus {
         diff!(hungry_level);
         res
     }
-}
-
-impl PlayerStatus {
-    pub fn new() -> PlayerStatus {
-        PlayerStatus {
-            stage_level: 1,
-            gold: 0,
-            cur_hp: 12,
-            max_hp: 12,
-            cur_str: 16,
-            max_str: 16,
-            arm: 4,
-            exp_level: 1,
-            exp: 0,
-            hungry_level: 0,
-        }
-    }
-    pub fn fetch(&mut self, new_stat: PlayerStatus) -> PlayerStatus {
-        let res = new_stat - *self;
+    pub fn merge(&mut self, new_stat: PlayerStatus) -> PlayerStatus {
+        let res = self.diff(&new_stat);
         *self = new_stat;
         res
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Msg {
+pub enum GameMsg {
     NotInjured(Enemy),
     Injured(Enemy),
     Direction,
     Scored(Enemy),
     Defeated(Enemy),
     Missed(Enemy),
-    Item(ItemWithId),
+    Item(ItemPack),
     ArmorW,
     ArmorT,
     WhichObj,
@@ -233,7 +227,17 @@ pub enum Msg {
     None,
 }
 
-default_none!(Msg);
+default_none!(GameMsg);
+
+impl GameMsg {
+    pub fn near_enemy(&self) -> bool {
+        use GameMsg::*;
+        match *self {
+            NotInjured(_) | Injured(_) | Scored(_) | Defeated(_) | Missed(_) => true,
+            _ => false,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Enemy {
@@ -335,46 +339,50 @@ impl Into<u8> for Enemy {
         }
     }
 }
-
 impl Enemy {
-    pub fn status(self) -> &'static EnemyStatus {
+    fn status(self) -> &'static EnemyStatus {
         let id: u8 = self.into();
         &ENEMIES[(id - b'A') as usize]
     }
-}
-
-#[derive(Debug)]
-pub struct EnemyStatus {
-    pub treasure: i32,     // gold
-    pub attr: EnemyAttr, // MEANとか ゲーム内でflag使わないでif文処理してるやつもこれで
-    pub exp: i32,        // 得られる経験値
-    pub level: i32,      // レベル (多分hit率およびhp)
-    pub defence: i32,    // アーマー(これも多分hit率だけ)
-    pub attack: Vec<Dice>, // 攻撃
-}
-
-impl EnemyStatus {
-    pub fn has_attr(&self, attr: EnemyAttr) -> bool {
-        self.attr.contains(attr)
+    pub fn treasure(self) -> i32 {
+        self.status().treasure
+    }
+    pub fn exp(self) -> i32 {
+        self.status().exp
+    }
+    pub fn level(self) -> EnemyAttr {
+        self.status().attr
+    }
+    pub fn defence(self) -> i32 {
+        self.status().defence
+    }
+    pub fn attack(self) -> &'static Vec<Dice> {
+        &self.status().attack
+    }
+    pub fn hp(self) -> Dice {
+        Dice::new(self.status().level, 8)
+    }
+    pub fn has_attr(self, attr: EnemyAttr) -> bool {
+        self.status().attr.contains(attr)
     }
 }
 
 pub struct EnemyHist {
-    pub name: Enemy,
-    pub attacked: i32,
     pub cd: Coord,
-    pub visible: bool,
+    pub hp_ex: DamageVal,
     pub lock: bool,
+    pub typ: Enemy,
+    pub visible: bool,
 }
 
 impl EnemyHist {
-    pub fn new(name: Enemy, cd: Coord) -> EnemyHist {
+    pub fn new(typ: Enemy, cd: Coord) -> EnemyHist {
         EnemyHist {
-            name: name,
-            attacked: 0,
             cd: cd,
-            visible: true,
+            hp_ex: typ.hp().expect_val(),
             lock: false,
+            typ: typ,
+            visible: true,
         }
     }
 }
@@ -415,6 +423,16 @@ macro_rules! enem_attr {
     })
 }
 
+#[derive(Debug)]
+struct EnemyStatus {
+    treasure: i32,     // gold
+    attr: EnemyAttr, // MEANとか ゲーム内でflag使わないでif文処理してるやつもこれで
+    exp: i32,        // 得られる経験値
+    level: i32,      // レベル (多分hit率およびhp)
+    defence: i32,    // アーマー(これも多分hit率だけ)
+    attack: Vec<Dice>, // 攻撃
+}
+
 lazy_static!{
     static ref ENEMIES: [EnemyStatus; 26] =[
         EnemyStatus { // Aquator
@@ -423,7 +441,7 @@ lazy_static!{
             exp: 20,
             level: 5,
             defence: 2,
-            attack: vec![Dice(0, 0)],
+            attack: vec![Dice::new(0, 0)],
         },
         EnemyStatus { // Bat
             treasure: 0,
@@ -431,7 +449,7 @@ lazy_static!{
             exp: 1,
             level: 1,
             defence: 3,
-            attack: vec![Dice(1, 2)],
+            attack: vec![Dice::new(1, 2)],
         },
         EnemyStatus { // Centaur
             treasure: 15,
@@ -439,7 +457,7 @@ lazy_static!{
             exp: 17,
             level: 4,
             defence: 4,
-            attack: vec![Dice(1, 2), Dice(1, 5), Dice(1, 5)],
+            attack: vec![Dice::new(1, 2), Dice::new(1, 5), Dice::new(1, 5)],
         },
         EnemyStatus { // Dragon
             treasure: 100,
@@ -447,7 +465,7 @@ lazy_static!{
             exp: 5000,
             level: 10,
             defence: 3,
-            attack: vec![Dice(1, 8), Dice(1, 8), Dice(3, 10)],
+            attack: vec![Dice::new(1, 8), Dice::new(1, 8), Dice::new(3, 10)],
         },
         EnemyStatus { // Emu
             treasure: 0,
@@ -455,7 +473,7 @@ lazy_static!{
             exp: 2,
             level: 1,
             defence: 7,
-            attack: vec![Dice(1, 2)],
+            attack: vec![Dice::new(1, 2)],
         },
         EnemyStatus { // Venus Flytrap
             treasure: 0,
@@ -471,7 +489,7 @@ lazy_static!{
             exp: 2000,
             level: 13,
             defence: 2,
-            attack: vec![Dice(4, 3), Dice(3, 5)],
+            attack: vec![Dice::new(4, 3), Dice::new(3, 5)],
         },
         EnemyStatus { // Hobgoblin
             treasure: 0,
@@ -479,7 +497,7 @@ lazy_static!{
             exp: 3,
             level: 1,
             defence: 5,
-            attack: vec![Dice(1, 8)],
+            attack: vec![Dice::new(1, 8)],
         },
         EnemyStatus { // Icemonster
             treasure: 0,
@@ -487,7 +505,7 @@ lazy_static!{
             exp: 5,
             level: 1,
             defence: 9,
-            attack: vec![Dice(0, 0)],
+            attack: vec![Dice::new(0, 0)],
         },
         EnemyStatus { // Jabberwock
             treasure: 70,
@@ -495,7 +513,7 @@ lazy_static!{
             exp: 3000,
             level: 15,
             defence: 6,
-            attack: vec![Dice(2, 12), Dice(2, 4)],
+            attack: vec![Dice::new(2, 12), Dice::new(2, 4)],
         },
         EnemyStatus { // Kestrel
             treasure: 0,
@@ -503,7 +521,7 @@ lazy_static!{
             exp: 1,
             level: 1,
             defence: 7,
-            attack: vec![Dice(1, 4)],
+            attack: vec![Dice::new(1, 4)],
         },
         EnemyStatus { // Leperachaun
             treasure: 0,
@@ -511,7 +529,7 @@ lazy_static!{
             exp: 10,
             level: 3,
             defence: 8,
-            attack: vec![Dice(1, 1)],
+            attack: vec![Dice::new(1, 1)],
         },
         EnemyStatus { // Medusa
             treasure: 40,
@@ -519,7 +537,7 @@ lazy_static!{
             exp: 200,
             level: 8,
             defence: 2,
-            attack: vec![Dice(3, 4), Dice(3, 4), Dice(2, 5)],
+            attack: vec![Dice::new(3, 4), Dice::new(3, 4), Dice::new(2, 5)],
         },
         EnemyStatus { // Nymph
             treasure: 100,
@@ -527,7 +545,7 @@ lazy_static!{
             exp: 37,
             level: 3,
             defence: 9,
-            attack: vec![Dice(0, 0)],
+            attack: vec![Dice::new(0, 0)],
         },
         EnemyStatus { // Orc
             treasure: 15,
@@ -535,7 +553,7 @@ lazy_static!{
             exp: 5,
             level: 1,
             defence: 6,
-            attack: vec![Dice(1, 8)],
+            attack: vec![Dice::new(1, 8)],
         },
         EnemyStatus { // Phantom
             treasure: 0,
@@ -543,7 +561,7 @@ lazy_static!{
             exp: 120,
             level: 8,
             defence: 3,
-            attack: vec![Dice(4, 4)],
+            attack: vec![Dice::new(4, 4)],
         },
         EnemyStatus { // Quagga
             treasure: 0,
@@ -551,7 +569,7 @@ lazy_static!{
             exp: 15,
             level: 3,
             defence: 3,
-            attack: vec![Dice(1, 5), Dice(1, 5)],
+            attack: vec![Dice::new(1, 5), Dice::new(1, 5)],
         },
         EnemyStatus { // Rattlesnake
             treasure: 0,
@@ -559,7 +577,7 @@ lazy_static!{
             exp: 9,
             level: 2,
             defence: 3,
-            attack: vec![Dice(1, 6)],
+            attack: vec![Dice::new(1, 6)],
         },
         EnemyStatus { // Snake
             treasure: 0,
@@ -567,7 +585,7 @@ lazy_static!{
             exp: 2,
             level: 1,
             defence: 5,
-            attack: vec![Dice(1, 3)],
+            attack: vec![Dice::new(1, 3)],
         },
         EnemyStatus { // Troll
             treasure: 50,
@@ -575,7 +593,7 @@ lazy_static!{
             exp: 120,
             level: 6,
             defence: 4,
-            attack: vec![Dice(1, 8), Dice(1, 8), Dice(2, 6)],
+            attack: vec![Dice::new(1, 8), Dice::new(1, 8), Dice::new(2, 6)],
         },
         EnemyStatus { // Urvile (Black Unicorn)
             treasure: 0,
@@ -583,7 +601,7 @@ lazy_static!{
             exp: 190,
             level: 7,
             defence: -2,
-            attack: vec![Dice(1, 9), Dice(1, 9), Dice(2, 9)],
+            attack: vec![Dice::new(1, 9), Dice::new(1, 9), Dice::new(2, 9)],
         },
         EnemyStatus { // Vampire
             treasure: 20,
@@ -591,7 +609,7 @@ lazy_static!{
             exp: 350,
             level: 8,
             defence: 1,
-            attack: vec![Dice(1, 19)],
+            attack: vec![Dice::new(1, 19)],
         },
         EnemyStatus { // Wraith
             treasure: 0,
@@ -599,7 +617,7 @@ lazy_static!{
             exp: 55,
             level: 5,
             defence: 4,
-            attack: vec![Dice(1, 6)],
+            attack: vec![Dice::new(1, 6)],
         },
         EnemyStatus { // Xeroc
             treasure: 30,
@@ -607,7 +625,7 @@ lazy_static!{
             exp: 100,
             level: 7,
             defence: 7,
-            attack: vec![Dice(4, 4)],
+            attack: vec![Dice::new(4, 4)],
         },
         EnemyStatus { // Yeti
             treasure: 30,
@@ -615,7 +633,7 @@ lazy_static!{
             exp: 50,
             level: 4,
             defence: 6,
-            attack: vec![Dice(1, 6), Dice(1, 6)],
+            attack: vec![Dice::new(1, 6), Dice::new(1, 6)],
         },
         EnemyStatus { // Zombie
             treasure: 0,
@@ -623,7 +641,7 @@ lazy_static!{
             exp: 6,
             level: 2,
             defence: 8,
-            attack: vec![Dice(1, 8)],
+            attack: vec![Dice::new(1, 8)],
         }
     ];
 }
@@ -661,15 +679,22 @@ impl From<u8> for Item {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ItemPack {
-    name: Item,
-    id: u8,
+    pub id: u8,
+    pub name: String,
+    pub num: u32,
+    pub typ: Item,
 }
 
 impl ItemPack {
-    pub fn new(name: Item, id: u8) -> ItemPack {
-        ItemPack { name: name, id: id }
+    pub fn new(id: u8, name: &str, num: u32, typ: Item) -> ItemPack {
+        ItemPack {
+            id: id,
+            name: name.to_owned(),
+            num: num,
+            typ: typ,
+        }
     }
 }
 
@@ -678,6 +703,7 @@ pub enum Weapon {
     Mace,
     LongSword,
     Bow,
+    Arrow,
     Dagger,
     TwoHandedSword,
     Dart,
@@ -687,6 +713,63 @@ pub enum Weapon {
 }
 
 default_none!(Weapon);
+
+bitflags! {
+    pub struct WeaponAttr: u8 {
+        const NONE = 0b000;
+        const MANY = 0b001;
+        const MISL = 0b010;
+    }
+}
+
+impl Default for WeaponAttr {
+    fn default() -> WeaponAttr {
+        WeaponAttr::NONE
+    }
+}
+#[derive(Clone, Copy, Debug, Default)]
+struct WeaponStatus {
+    attr: WeaponAttr,
+    wield: Dice,
+    throw: Dice,
+}
+impl WeaponStatus {
+    fn new(a: WeaponAttr, w: Dice, t: Dice) -> WeaponStatus {
+        WeaponStatus {
+            attr: a,
+            wield: w,
+            throw: t,
+        }
+    }
+}
+impl Weapon {
+    fn status(self) -> WeaponStatus {
+        let type0 = WeaponAttr::NONE;
+        let type1 = WeaponAttr::MANY | WeaponAttr::MISL;
+        let type2 = WeaponAttr::MISL;
+        match self {
+            Weapon::Mace => WeaponStatus::new(type0, Dice::new(2, 4), Dice::new(1, 3)),
+            Weapon::LongSword => WeaponStatus::new(type0, Dice::new(3, 4), Dice::new(1, 2)),
+            Weapon::Bow => WeaponStatus::new(type0, Dice::new(1, 1), Dice::new(1, 1)),
+            Weapon::Arrow => WeaponStatus::new(type1, Dice::new(1, 1), Dice::new(2, 3)),
+            Weapon::Dagger => WeaponStatus::new(type2, Dice::new(1, 6), Dice::new(1, 4)),
+            Weapon::TwoHandedSword => WeaponStatus::new(type0, Dice::new(4, 4), Dice::new(1, 2)),
+            Weapon::Dart => WeaponStatus::new(type1, Dice::new(1, 1), Dice::new(1, 3)),
+            Weapon::Shuriken => WeaponStatus::new(type1, Dice::new(1, 2), Dice::new(2, 4)),
+            Weapon::Spear => WeaponStatus::new(type2, Dice::new(2, 3), Dice::new(1, 6)),
+            Weapon::None => WeaponStatus::default(),
+        }
+    }
+    pub fn has_attr(self, attr: WeaponAttr) -> bool {
+        self.status().attr.contains(attr)
+    }
+    pub fn wield(self) -> Dice {
+        self.status().wield
+    }
+    pub fn throw(self) -> Dice {
+        self.status().throw
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Armor {
@@ -702,9 +785,6 @@ pub enum Armor {
 }
 
 default_none!(Armor);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ItemWithId(pub Item, pub String, pub u8, pub u32);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Food {
@@ -772,29 +852,5 @@ impl From<u8> for FieldObject {
                 }
             }
         }
-    }
-}
-
-// calc damage
-pub mod damage {
-    pub fn str_plus(strength: i32) -> Option<i32> {
-        const STR_PLUS: [i32; 32] = [
-            -7, -6, -5, -4, -3, -2, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2,
-            2, 2, 2, 2, 3,
-        ];
-        if strength <= 0 || strength > 32 {
-            return None;
-        }
-        Some(STR_PLUS[strength as usize - 1])
-    }
-    pub fn add_dam(strength: i32) -> Option<i32> {
-        const ADD_DAM: [i32; 32] = [
-            -7, -6, -5, -4, -3, -2, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 3, 3, 4, 5, 5, 5, 5, 5,
-            5, 5, 5, 5, 6,
-        ];
-        if strength <= 0 || strength > 32 {
-            return None;
-        }
-        Some(ADD_DAM[strength as usize - 1])
     }
 }

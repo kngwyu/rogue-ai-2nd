@@ -32,7 +32,7 @@ lazy_static!{
     pub static ref LOGGER: Logger = match MATCHES.value_of("DEBUG_FILE") {
         Some(s) => {
             let mut builder = FileLoggerBuilder::new(s);
-            builder.level(Severity::Debug);
+            builder.level(*LEVEL);
             builder.truncate();
             builder.build()
         }

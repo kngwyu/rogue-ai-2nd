@@ -81,16 +81,21 @@ pub struct Dangeon {
     empty: bool,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum DangeonMsg {
+    FindNew,
     Die,
     None,
 }
+
+default_none!(DangeonMsg);
 
 impl Dangeon {
     pub fn is_empty(&self) -> bool {
         self.empty
     }
-    pub fn fetch(&mut self, orig: &[Vec<u8>]) -> DangeonMsg {
+    pub fn merge(&mut self, orig: &[Vec<u8>]) -> DangeonMsg {
+        let mut res = DangeonMsg::default();
         for (cell_mut, cd) in self.iter_mut() {
             let c = orig[cd.y as usize][cd.x as usize];
             if c == b'/' {
@@ -99,10 +104,13 @@ impl Dangeon {
             cell_mut.obj = FieldObject::from(c);
             if cell_mut.surface == Surface::None {
                 cell_mut.surface = Surface::from(c);
+                if cell_mut.surface != Surface::None {
+                    res = DangeonMsg::FindNew;
+                }
             }
         }
         self.empty = false;
-        DangeonMsg::None
+        res
     }
     pub fn init(&mut self) {
         for (cell_mut, _) in self.iter_mut() {
@@ -121,6 +129,13 @@ impl Dangeon {
             content: self,
             cd: Coord::default(),
         }
+    }
+    pub fn player_cd(&self) -> Option<Coord> {
+        Some(
+            self.iter()
+                .find(|&(cell_ref, _)| cell_ref.obj == FieldObject::Player)?
+                .1,
+        )
     }
 }
 
