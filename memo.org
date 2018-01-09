@@ -22,7 +22,7 @@
 - 戦闘
   - roll_em を呼び出す
     - roll_em(THING *thatt, THING *thdef, THING *weap, bool hurl)
-      - thattは攻撃する側のポインタ、thdefはされる側のポインタ
+      - thattは攻撃する側のポインタ、thdefはされるのポインタ
       - weapはweapon hurlは投げるならTRUE
       - "1x6/3x4" のようなダイス文字列をatoiで読んでループをまわす
     - 当たり判定
@@ -34,6 +34,7 @@
         - 相手がnot runningならhplusに+4
           - 自分はIce Monsterやtrap等がなければ基本的にRUNNING
           - 敵はたぶん単に止まっているかどうか(未検証)
+        - 武器の補正値は未使用かも？なので基本的にrunningの補正だけでいい？
       - rnd(20) + 補正 >= 20 - レベル - アーマー で 成功 なので
       - rnd(20) >= 20 - レベル - アーマー 補正で成功
     - ダメージ計算
@@ -49,3 +50,19 @@
   - !on(*tp, ISRUN) && rnd(3) != 0 && on(*tp, ISMEAN) &&..
     - つまりMEANでも33%の確率でプレイヤーに近づき出さない
   - MedusaとGreedyなMonsterは特殊判定あり
+- アーマー
+  - アーマークラス
+#+BEGIN_SRC c
+int a_class[MAXARMORS] = {		/* Armor class for each armor type */
+	8,	/* LEATHER */
+	7,	/* RING_MAIL */
+	7,	/* STUDDED_LEATHER */
+	6,	/* SCALE_MAIL */
+	5,	/* CHAIN_MAIL */
+	4,	/* SPLINT_MAIL */
+	4,	/* BANDED_MAIL */
+	3,	/* PLATE_MAIL */
+};
+#+END_SRC
+  - 表示されるのは10 - obj->o_arm
+  - 

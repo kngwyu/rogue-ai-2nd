@@ -17,17 +17,14 @@ impl EnemyList {
     fn new() -> EnemyList {
         EnemyList(Vec::with_capacity(8))
     }
-
     fn add(&mut self, enem: Enemy, cd: Coord) {
         self.0.push(EnemyHist::new(enem, cd));
     }
-
     fn all_invisible(&mut self) {
         for enem in self.iter_mut() {
             enem.visible = false;
         }
     }
-
     fn get(&self, cd: Coord) -> Option<&EnemyHist> {
         for enem in self.iter() {
             if enem.cd == cd {
@@ -36,7 +33,6 @@ impl EnemyList {
         }
         None
     }
-
     fn get_mut(&mut self, cd: Coord) -> Option<&mut EnemyHist> {
         for enem in self.iter_mut() {
             if enem.cd == cd {
@@ -45,23 +41,18 @@ impl EnemyList {
         }
         None
     }
-
     fn init(&mut self) {
         *self = EnemyList::new();
     }
-
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
-
     fn iter<'a>(&'a self) -> SliceIter<'a, EnemyHist> {
         self.0.iter()
     }
-
     fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, EnemyHist> {
         self.0.iter_mut()
     }
-
     fn merge(&mut self, dangeon: &Dangeon) {
         self.all_invisible();
         for (cell_ref, cd) in dangeon.iter() {
@@ -102,7 +93,6 @@ impl EnemyList {
             }
         }
     }
-
     fn remove(&mut self, cd: Coord) -> bool {
         let mut rem_id = None;
         for (i, enem) in self.iter().enumerate() {
@@ -189,17 +179,17 @@ impl Iterator for ItemCall {
     }
 }
 
-float_alias!(ActionValue, f64);
+float_alias!(ActionVal, f64);
 
-impl Eq for ActionValue {}
+impl Eq for ActionVal {}
 
-impl Ord for ActionValue {
-    fn cmp(&self, other: &ActionValue) -> Ordering {
+impl Ord for ActionVal {
+    fn cmp(&self, other: &ActionVal) -> Ordering {
         self.partial_cmp(other).expect("NAN value is compared!")
     }
 }
 
-impl ActionValue {}
+impl ActionVal {}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum Tactics {
@@ -219,7 +209,7 @@ struct PlayInfo {
     act: Action,
     cd: Coord,
     dest: Option<Coord>,
-    priority: ActionValue,
+    priority: ActionVal,
     tact: Tactics,
 }
 
@@ -227,7 +217,7 @@ impl PlayInfo {
     fn init_tact(&mut self) {
         self.tact = Tactics::None;
         self.dest = None;
-        self.priority = ActionValue::default();
+        self.priority = ActionVal::default();
     }
 }
 
@@ -326,7 +316,7 @@ impl Reactor for FeudalAgent {
                         let _removed = match self.play_info.act {
                             Action::Move(d) | Action::Fight(d) => self.enemy_list.remove(d.as_cd()),
                             Action::Throw((d, _)) => {
-                                let mut diter = self.play_info.cd.dist_iter(d.as_cd());
+                                let mut diter = self.play_info.cd.dist_iter(d);
                                 diter.any(|cd| self.enemy_list.remove(cd))
                             }
                             _ => false,
@@ -348,7 +338,7 @@ impl Reactor for FeudalAgent {
                         Action::Throw((d, id)) => {
                             if let Some(w) = self.item_list.get_weapon(id) {
                                 let dam = w.throw().expect_val();
-                                self.play_info.cd.dist_iter(d.as_cd()).any(|cd| {
+                                self.play_info.cd.dist_iter(d).any(|cd| {
                                     if let Some(hist_mut) = self.enemy_list.get_mut(cd) {
                                         hist_mut.hp_ex -= dam;
                                         true
@@ -395,6 +385,7 @@ impl Reactor for FeudalAgent {
 
 // 探索部はこっちに持ってきた(見づらいから)
 // 探索用のPlayerState
+const SEARCH_DEPTH_MAX: usize = 8;
 #[derive(Clone, Debug)]
 struct SearchPlayer {
     cd: Coord,
@@ -405,6 +396,8 @@ struct SearchPlayer {
 struct SearchState {
     enemy_list: EnemyList,
     player: SearchPlayer,
+    actions: Vec<Action>,
+    val: ActionVal,
 }
 impl FeudalAgent {
     fn init_serch_player(&self) -> SearchPlayer {
@@ -420,11 +413,13 @@ impl FeudalAgent {
         let init_state = SearchState {
             enemy_list: self.enemy_list.clone(),
             player: self.init_serch_player(),
+            actions: Vec::with_capacity(SEARCH_DEPTH_MAX),
+            val: ActionVal::default(),
         };
     }
     // 食糧・敵への対処など優先度の高い処理
     fn interupput(&self) {}
-    fn rethink(&mut self, prev: ActionValue) {
+    fn rethink(&mut self, prev: ActionVal) {
         // prevは現在のTacticsの優先度
     }
     fn action_sub(&mut self, dangeon_msg: DangeonMsg) -> Option<Vec<u8>> {

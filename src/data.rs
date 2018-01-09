@@ -32,7 +32,6 @@ macro_rules! enum_with_iter {
 }
 
 enum_with_iter!(Dist {
-    Stay,
     Up,
     Down,
     Left,
@@ -41,6 +40,7 @@ enum_with_iter!(Dist {
     RightUp,
     LeftDown,
     RightDown,
+    Stay,
 });
 
 impl Into<u8> for Dist {
@@ -350,8 +350,8 @@ impl Enemy {
     pub fn exp(self) -> i32 {
         self.status().exp
     }
-    pub fn level(self) -> EnemyAttr {
-        self.status().attr
+    pub fn level(self) -> i32 {
+        self.status().level
     }
     pub fn defence(self) -> i32 {
         self.status().defence

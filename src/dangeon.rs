@@ -280,11 +280,10 @@ impl Coord {
             y: y.into(),
         }
     }
-
-    pub fn dist_iter(&self, d: Coord) -> DistIterator {
+    pub fn dist_iter(&self, d: Dist) -> DistIterator {
         DistIterator {
             cur: *self,
-            dist: d,
+            dist: d.as_cd(),
         }
     }
 
@@ -361,9 +360,8 @@ mod test {
         println!(">_<");
         for (cell_ref, cd) in d.iter_mut() {
             cell_ref.obj = FieldObject::Player;
-            println!("{:?}, {:?}", cell_ref, cd);
         }
-        for cd in Coord::new(5, 5).dist_iter(Dist::Right.as_cd()) {
+        for cd in Coord::new(5, 5).dist_iter(Dist::Right) {
             println!("{:?}", cd);
         }
     }
