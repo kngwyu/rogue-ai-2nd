@@ -367,10 +367,11 @@ impl Enemy {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct EnemyHist {
     pub cd: Coord,
     pub hp_ex: DamageVal,
-    pub lock: bool,
+    pub running: bool,
     pub typ: Enemy,
     pub visible: bool,
 }
@@ -380,7 +381,7 @@ impl EnemyHist {
         EnemyHist {
             cd: cd,
             hp_ex: typ.hp().expect_val(),
-            lock: false,
+            running: false,
             typ: typ,
             visible: true,
         }

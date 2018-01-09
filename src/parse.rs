@@ -5,7 +5,7 @@ use std::str;
 pub struct StatusParse {
     re: Regex,
 }
-
+int_alias!(Val, i32);
 impl StatusParse {
     #[cfg_attr(feature = "clippy", allow(trivial_regex))]
     pub fn new() -> Self {

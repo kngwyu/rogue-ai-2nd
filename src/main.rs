@@ -12,6 +12,7 @@ extern crate curses_game_wrapper as cgw;
 extern crate lazy_static;
 #[macro_use]
 extern crate num_alias;
+extern crate num_cpus;
 extern crate rand;
 extern crate regex;
 #[macro_use]

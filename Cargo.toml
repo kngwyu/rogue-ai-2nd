@@ -2,16 +2,16 @@
 authors = ["kngwyu <yuji.kngw.80s.revive@gmail.com>"]
 name = "rogue-ai-2nd"
 version = "0.0.1"
-
 [dependencies]
+assert_approx_eq = "1.0.0"
 bitflags = "1.0.1"
 clap = "2.29.0"
 lazy_static = "1.0.0"
+num_alias = "0.1.7"
+num_cpus = "*"
+rand = "0.4.2"
 regex = "0.2.3"
 sloggers = "0.2.4"
-num_alias = "0.1.5"
-assert_approx_eq = "1.0.0"
-rand = "0.4.2"
 
 [dependencies.clippy]
 optional = true

@@ -2,13 +2,14 @@ use consts::*;
 use data::*;
 use dangeon::*;
 use damage::*;
-use parse::{MsgParse, StatusParse};
+use parse::{MsgParse, StatusParse, Val};
 use cgw::{ActionResult, Reactor};
 use std::str;
 use std::cmp::Ordering;
 use std::slice::Iter as SliceIter;
 use std::slice::IterMut as SliceIterMut;
 
+#[derive(Clone, Debug)]
 struct EnemyList(Vec<EnemyHist>);
 
 // getがダブるのが嫌なのでDerefは実装しない
@@ -49,6 +50,10 @@ impl EnemyList {
         *self = EnemyList::new();
     }
 
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     fn iter<'a>(&'a self) -> SliceIter<'a, EnemyHist> {
         self.0.iter()
     }
@@ -62,11 +67,14 @@ impl EnemyList {
         for (cell_ref, cd) in dangeon.iter() {
             if let Some(enem) = cell_ref.enemy() {
                 macro_rules! exec_merge {
-                    ($cd:ident, $res:ident) => {
+                    ($cd:ident, $res:ident, $run:expr) => {
                         if let Some(enem_hist) = self.get_mut($cd) {
                             if enem_hist.typ == enem {
                                 enem_hist.cd = cd;
                                 enem_hist.visible = true;
+                                if $run {
+                                    enem_hist.running = true;
+                                }
                                 $res = true;
                             }
                         }
@@ -75,7 +83,7 @@ impl EnemyList {
                 let mut merged = Dist::vars().any(|dist| {
                     let search_cd = cd + dist.as_cd();
                     let mut res = false;
-                    exec_merge!(search_cd, res);
+                    exec_merge!(search_cd, res, *dist != Dist::Stay);
                     res
                 });
                 if !merged && enem.has_attr(EnemyAttr::FLYING) {
@@ -83,7 +91,7 @@ impl EnemyList {
                         let mut res = false;
                         for &plus_cd in [dist.as_cd(), dist.rotate().as_cd()].iter() {
                             let search_cd = cd + plus_cd;
-                            exec_merge!(search_cd, res);
+                            exec_merge!(search_cd, res, true);
                         }
                         res
                     });
@@ -211,7 +219,7 @@ struct PlayInfo {
     act: Action,
     cd: Coord,
     dest: Option<Coord>,
-    priority: i64,
+    priority: ActionValue,
     tact: Tactics,
 }
 
@@ -219,6 +227,7 @@ impl PlayInfo {
     fn init_tact(&mut self) {
         self.tact = Tactics::None;
         self.dest = None;
+        self.priority = ActionValue::default();
     }
 }
 
@@ -284,42 +293,6 @@ impl FeudalAgent {
             false
         }
     }
-    fn rethink(&mut self, prev: ActionValue) {
-        // prevは現在のTacticsの優先度
-    }
-    fn action_sub(
-        &mut self,
-        stat_diff: PlayerStatus,
-        dangeon_msg: DangeonMsg,
-        game_msg: GameMsg,
-    ) -> Option<Vec<u8>> {
-        match self.play_info.tact {
-            Tactics::Escape => {
-                // ?
-            }
-            Tactics::Explore => {
-                // 割込み処理 終了判定は？
-            }
-            Tactics::Fight => {
-                // 相互
-            }
-            Tactics::PickItem => {
-                // 座標の確認 割込みまたはReThink
-            }
-            Tactics::Recover => {
-                // HPの確認 割込み処理
-            }
-            Tactics::ToStair => {
-                // 座標の確認 割込み処理
-                if self.is_dest() {
-                    self.play_info.init_tact();
-                    return Some(Action::DownStair.into());
-                }
-            }
-            Tactics::None => {}
-        }
-        None
-    }
     fn next_stage(&mut self) {
         self.enemy_list.init();
         self.dangeon.init();
@@ -344,7 +317,6 @@ impl Reactor for FeudalAgent {
                     }
                     msg
                 };
-                let game_msg = msg.clone();
                 match msg {
                     GameMsg::Item(item_pack) => if item_pack.typ != Item::Gold {
                         self.item_list.merge(item_pack);
@@ -413,12 +385,84 @@ impl Reactor for FeudalAgent {
                 if ret_early != None {
                     return ret_early;
                 }
-                self.action_sub(stat_diff, dangeon_msg, game_msg)
+                self.action_sub(dangeon_msg)
             }
-            ActionResult::NotChanged => {
-                self.action_sub(PlayerStatus::default(), DangeonMsg::None, GameMsg::None)
-            }
+            ActionResult::NotChanged => self.action_sub(DangeonMsg::None),
             ActionResult::GameEnded => None,
         }
+    }
+}
+
+// 探索部はこっちに持ってきた(見づらいから)
+// 探索用のPlayerState
+#[derive(Clone, Debug)]
+struct SearchPlayer {
+    cd: Coord,
+    hp_exp: DamageVal,
+}
+// マップは持たなくていいよね？
+#[derive(Clone, Debug)]
+struct SearchState {
+    enemy_list: EnemyList,
+    player: SearchPlayer,
+}
+impl FeudalAgent {
+    fn init_serch_player(&self) -> SearchPlayer {
+        SearchPlayer {
+            cd: self.play_info.cd,
+            hp_exp: DamageVal(self.player_stat.cur_hp as _),
+        }
+    }
+    fn enemy_search(&self) {
+        if self.enemy_list.is_empty() {
+            return;
+        }
+        let init_state = SearchState {
+            enemy_list: self.enemy_list.clone(),
+            player: self.init_serch_player(),
+        };
+    }
+    // 食糧・敵への対処など優先度の高い処理
+    fn interupput(&self) {}
+    fn rethink(&mut self, prev: ActionValue) {
+        // prevは現在のTacticsの優先度
+    }
+    fn action_sub(&mut self, dangeon_msg: DangeonMsg) -> Option<Vec<u8>> {
+        match self.play_info.tact {
+            Tactics::Escape => {
+                // ?
+            }
+            Tactics::Explore => {
+                // 割込み処理 終了判定は？
+            }
+            Tactics::Fight => {
+                // 相互
+            }
+            Tactics::PickItem => {
+                // 座標の確認 割込みまたはReThink
+            }
+            Tactics::Recover => {
+                // HPの確認 割込み処理
+            }
+            Tactics::ToStair => {
+                // 座標の確認 割込み処理
+                if self.is_dest() {
+                    self.play_info.init_tact();
+                    return Some(Action::DownStair.into());
+                }
+            }
+            Tactics::None => {}
+        }
+        None
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn num_cpus() {
+        use num_cpus;
+        let num = num_cpus::get();
+        println!("{}", num);
     }
 }
