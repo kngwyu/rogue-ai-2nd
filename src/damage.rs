@@ -16,7 +16,7 @@ fn hit_rate_sub(level: i32, armor: i32, correct: i32) -> ProbVal {
 }
 
 // 補正値はRunningとstrength以外考慮しない
-pub fn hit_rate_attck(player: &PlayerStatus, ene: &EnemyHist) -> ProbVal {
+pub fn hit_rate_attack(player: &PlayerStatus, ene: &EnemyHist) -> ProbVal {
     let st = player.cur_str;
     let str_p = str_plus(st).unwrap_or_default() + if ene.running { 0 } else { 4 };
     hit_rate_sub(player.exp_level, ene.typ.defence(), str_p + 1)
@@ -140,7 +140,7 @@ mod test {
     fn hit_rate_test() {
         let player = PlayerStatus::initial();
         let ene = EnemyHist::from_type(Enemy::Emu);
-        println!("{:?}", hit_rate_attck(&player, &ene));
+        println!("{:?}", hit_rate_attack(&player, &ene));
         println!("{:?}", hit_rate_deffence(&player, &ene.typ));
     }
 }

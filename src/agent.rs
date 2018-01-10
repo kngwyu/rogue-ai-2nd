@@ -4,7 +4,9 @@ use dangeon::*;
 use damage::*;
 use parse::{MsgParse, StatusParse};
 use cgw::{ActionResult, Reactor};
+use num_cpus;
 use std::str;
+use std::cmp;
 use std::cmp::Ordering;
 use std::slice::Iter as SliceIter;
 use std::slice::IterMut as SliceIterMut;
@@ -116,10 +118,12 @@ impl ItemList {
     fn new() -> ItemList {
         let mut res = ItemList(vec![ItemPack::default(); 26]);
         res.merge(ItemPack::new(b'a', "", 1, Item::Food(Food::Ration)));
-        res.merge(ItemPack::new(b'b', "", 1, Item::Armor(Armor::Ring)));
+        let mut arm = ItemPack::new(b'b', "", 1, Item::Armor(Armor::Ring));
+        arm.val = Some(4);
+        res.merge(arm);
         res.merge(ItemPack::new(b'c', "", 1, Item::Weapon(Weapon::Mace)));
         res.merge(ItemPack::new(b'd', "", 1, Item::Weapon(Weapon::Bow)));
-        // Arrowの数は少なめに見つもっておく(どうせ拾った時にわかるから)
+        // Arrowの数は少なめに見つもっておく(どうせ拾った時わかるから)
         res.merge(ItemPack::new(b'e', "", 20, Item::Weapon(Weapon::Arrow)));
         res
     }
@@ -155,6 +159,9 @@ impl ItemList {
         } else {
             None
         }
+    }
+    fn iter<'a>(&'a self) -> SliceIter<'a, ItemPack> {
+        self.0.iter()
     }
 }
 
@@ -276,6 +283,27 @@ impl FeudalAgent {
         let id = self.equipment.weapon_id?;
         self.item_list.get_weapon(id)
     }
+    fn throw_weapon(&self) -> Vec<(Weapon, u32)> {
+        let mut res = Vec::new();
+        for ip in self.item_list.iter() {
+            if let Item::Weapon(w) = ip.typ {
+                if w.has_attr(WeaponAttr::MISL) {
+                    res.push((w, ip.num));
+                }
+            }
+        }
+        res
+    }
+    fn get_weapon_id(&self, w1: Weapon) -> Option<u8> {
+        for ip in self.item_list.iter() {
+            if let Item::Weapon(w2) = ip.typ {
+                if w1 == w2 {
+                    return Some(ip.id);
+                }
+            }
+        }
+        None
+    }
     fn is_dest(&self) -> bool {
         if let Some(cd) = self.play_info.dest {
             self.play_info.cd == cd
@@ -287,6 +315,40 @@ impl FeudalAgent {
         self.enemy_list.init();
         self.dangeon.init();
         self.play_info.init_tact();
+    }
+    // 食糧・敵への対処など優先度の高い処理
+    fn interupput(&self) {}
+    fn rethink(&mut self, prev: ActionVal) {
+        // prevは現在のTacticsの優先度
+    }
+    fn action_sub(&mut self, dangeon_msg: DangeonMsg) -> Option<Vec<u8>> {
+        match self.play_info.tact {
+            Tactics::Escape => {
+                // ?
+            }
+            Tactics::Explore => {
+                // 割込み処理 終了判定は？
+            }
+            Tactics::Fight => {
+                // 相互
+                enemy_search::exec(self);
+            }
+            Tactics::PickItem => {
+                // 座標の確認 割込みまたはReThink
+            }
+            Tactics::Recover => {
+                // HPの確認 割込み処理
+            }
+            Tactics::ToStair => {
+                // 座標の確認 割込み処理
+                if self.is_dest() {
+                    self.play_info.init_tact();
+                    return Some(Action::DownStair.into());
+                }
+            }
+            Tactics::None => {}
+        }
+        None
     }
 }
 
@@ -384,103 +446,159 @@ impl Reactor for FeudalAgent {
 }
 
 // 探索部はこっちに持ってきた(見づらいから)
-// 探索用のPlayerState
-const SEARCH_DEPTH_MAX: usize = 8;
-const SEARCH_WIDTH_MAX: usize = 100;
-#[derive(Clone, Debug)]
-struct SearchPlayer {
-    cd: Coord,
-    hp_exp: DamageVal,
-}
-// マップは持たなくていいよね？
-#[derive(Clone, Debug)]
-struct SearchState {
-    enemy_list: EnemyList,
-    player: SearchPlayer,
-    actions: Vec<Action>,
-    val: ActionVal,
-}
-impl FeudalAgent {
-    fn init_serch_player(&self) -> SearchPlayer {
-        SearchPlayer {
-            cd: self.play_info.cd,
-            hp_exp: DamageVal(self.player_stat.cur_hp as _),
+mod enemy_search {
+    use super::*;
+    const SEARCH_DEPTH_MAX: usize = 8;
+    const SEARCH_WIDTH_MAX: usize = 100;
+    // 探索用のPlayerState
+    #[derive(Clone, Debug)]
+    struct SearchPlayer {
+        cd: Coord,
+        hp_exp: DamageVal,
+        wield: Weapon,
+        throw: Vec<(Weapon, u32)>,
+    }
+    impl SearchPlayer {
+        fn initial(agent: &FeudalAgent) -> SearchPlayer {
+            SearchPlayer {
+                cd: agent.play_info.cd,
+                hp_exp: DamageVal(agent.player_stat.cur_hp as _),
+                wield: agent.cur_weapon().unwrap_or_default(),
+                throw: agent.throw_weapon(),
+            }
         }
     }
-    fn enemy_search(&self) {
-        if self.enemy_list.is_empty() {
-            return;
-        }
-        let init_state = SearchState {
-            enemy_list: self.enemy_list.clone(),
-            player: self.init_serch_player(),
-            actions: Vec::with_capacity(SEARCH_DEPTH_MAX),
-            val: ActionVal::default(),
-        };
-        let mut state_list = vec![init_state.clone()];
-        for turn in 1..SEARCH_DEPTH_MAX + 1 {
-            state_list.sort_unstable();
-            let mut next_states = Vec::new();
-            for cur_state in state_list {
-                let a = cur_state.val;
-            }
-            state_list = next_states;
+    // simulationするアクション
+    #[derive(Copy, Clone, Debug)]
+    enum TryAction {
+        Move(Dist),
+        Throw((Dist, Weapon)),
+    }
+    impl TryAction {
+        fn to_action(&self, agent: &FeudalAgent) -> Option<Action> {
+            let res = match *self {
+                TryAction::Move(d) => Action::Move(d),
+                TryAction::Throw((d, w)) => Action::Throw((d, agent.get_weapon_id(w)?)),
+            };
+            Some(res)
         }
     }
-    // 食糧・敵への対処など優先度の高い処理
-    fn interupput(&self) {}
-    fn rethink(&mut self, prev: ActionVal) {
-        // prevは現在のTacticsの優先度
+    #[derive(Clone, Debug)]
+    struct SearchState {
+        enemy_list: EnemyList,
+        player: SearchPlayer,
+        actions: Vec<Action>,
+        end: bool, // Downstairした場合or死んだ場合 これをtrueにする
+        val: ActionVal,
     }
-    fn action_sub(&mut self, dangeon_msg: DangeonMsg) -> Option<Vec<u8>> {
-        match self.play_info.tact {
-            Tactics::Escape => {
-                // ?
-            }
-            Tactics::Explore => {
-                // 割込み処理 終了判定は？
-            }
-            Tactics::Fight => {
-                // 相互
-            }
-            Tactics::PickItem => {
-                // 座標の確認 割込みまたはReThink
-            }
-            Tactics::Recover => {
-                // HPの確認 割込み処理
-            }
-            Tactics::ToStair => {
-                // 座標の確認 割込み処理
-                if self.is_dest() {
-                    self.play_info.init_tact();
-                    return Some(Action::DownStair.into());
+
+    fn simulate_act(
+        agent: &FeudalAgent,
+        state: &SearchState,
+        action: TryAction,
+    ) -> Option<SearchState> {
+        let cur_cd = state.player.cd;
+        let mut next_state = state.clone();
+        let mut caused_dam = DamageVal::default();
+        // 自分の行動
+        match action {
+            TryAction::Move(d) => {
+                let can_move = agent.dangeon.can_move(cur_cd, d)?;
+                if !can_move {
+                    return None;
+                }
+                let ncd = cur_cd + d.as_cd();
+                if let Some(enem_ref) = next_state.enemy_list.get_mut(ncd) {
+                    let prob = hit_rate_attack(&agent.player_stat, &enem_ref);
+                    let dam = expect_dam_attack(&agent.player_stat, state.player.wield, false);
+                    let dam = dam * DamageVal(*prob);
+                    caused_dam += dam;
+                    enem_ref.hp_ex -= dam;
+                    enem_ref.running = true;
+                } else {
+                    next_state.player.cd = ncd;
                 }
             }
-            Tactics::None => {}
+            TryAction::Throw((d, throw_weap)) => {
+                let diter = cur_cd.dist_iter(d);
+                let mut ok = false;
+                for cd in diter {
+                    let cell = agent.dangeon.get(cd)?;
+                    match cell.surface() {
+                        Surface::Door | Surface::None => return None,
+                        _ => {}
+                    }
+                    if let Some(enem_ref) = next_state.enemy_list.get_mut(cd) {
+                        let prob = hit_rate_attack(&agent.player_stat, &enem_ref);
+                        let dam = expect_dam_attack(&agent.player_stat, throw_weap, true);
+                        let dam = dam * DamageVal(*prob);
+                        caused_dam += dam;
+                        enem_ref.hp_ex -= dam;
+                        enem_ref.running = true;
+                        ok = true;
+                        break;
+                    }
+                }
+                if !ok {
+                    return None;
+                }
+            } // 敵の行動
         }
         None
     }
-}
 
-impl Ord for SearchState {
-    fn cmp(&self, other: &SearchState) -> Ordering {
-        self.val.cmp(&other.val)
+    pub fn exec(agent: &FeudalAgent) {
+        if agent.enemy_list.is_empty() {
+            return;
+        }
+        let init_state = SearchState {
+            enemy_list: agent.enemy_list.clone(),
+            player: SearchPlayer::initial(agent),
+            actions: Vec::with_capacity(SEARCH_DEPTH_MAX),
+            end: false,
+            val: ActionVal::default(),
+        };
+        let mut state_list = vec![init_state.clone()];
+        let thread_num = num_cpus::get();
+        let mut ma = 0;
+        for turn in 1..SEARCH_DEPTH_MAX + 1 {
+            state_list.sort_unstable();
+            let mut next_states = Vec::new();
+            ma = cmp::max(ma, state_list.len());
+            for cur_state in state_list.iter().take(SEARCH_WIDTH_MAX) {
+                if cur_state.end {
+                    next_states.push(cur_state.clone());
+                    continue;
+                }
+                let a = cur_state.val;
+                // just try to move or throw
+            }
+            state_list = next_states;
+        }
+        debug!(LOGGER, "max state num: {}", ma);
+    }
+    impl Ord for SearchState {
+        fn cmp(&self, other: &SearchState) -> Ordering {
+            self.val.cmp(&other.val)
+        }
+    }
+
+    impl PartialOrd for SearchState {
+        fn partial_cmp(&self, other: &SearchState) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Eq for SearchState {}
+
+    impl PartialEq for SearchState {
+        fn eq(&self, other: &SearchState) -> bool {
+            self.val.eq(&other.val)
+        }
     }
 }
 
-impl PartialOrd for SearchState {
-    fn partial_cmp(&self, other: &SearchState) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Eq for SearchState {}
-
-impl PartialEq for SearchState {
-    fn eq(&self, other: &SearchState) -> bool {
-        self.val.eq(&other.val)
-    }
-}
+impl FeudalAgent {}
 
 #[cfg(test)]
 mod test {

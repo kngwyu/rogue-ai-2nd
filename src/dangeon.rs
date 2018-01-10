@@ -64,6 +64,9 @@ impl Cell {
             None
         }
     }
+    pub fn surface(&self) -> Surface {
+        self.surface
+    }
 }
 
 pub trait CoordGet {
@@ -136,6 +139,54 @@ impl Dangeon {
                 .find(|&(cell_ref, _)| cell_ref.obj == FieldObject::Player)?
                 .1,
         )
+    }
+    fn can_move_sub(cur: Surface, nxt: Surface, d: Dist) -> Option<bool> {
+        match cur {
+            Surface::Floor => match nxt {
+                Surface::Floor | Surface::Stair | Surface::Trap => Some(true),
+                Surface::Door => Some(!d.is_diag()),
+                Surface::Wall => Some(false),
+                _ => None,
+            },
+            Surface::Road => match nxt {
+                Surface::Road | Surface::Stair | Surface::Trap | Surface::Door => Some(d.is_diag()),
+                Surface::Wall => Some(false),
+                _ => None,
+            },
+            Surface::Door => match nxt {
+                Surface::Road | Surface::Stair | Surface::Trap | Surface::Door | Surface::Floor => {
+                    Some(d.is_diag())
+                }
+                Surface::Wall => Some(false),
+                _ => None,
+            },
+
+            _ => None,
+        }
+    }
+    pub fn can_move(&self, cd: Coord, d: Dist) -> Option<bool> {
+        let cur_sur = self.get(cd)?.surface;
+        let nxt_sur = self.get(cd + d.as_cd())?.surface;
+        match cur_sur {
+            Surface::Stair | Surface::Trap => {
+                let (mut cnt_f, mut cnt_r) = (0, 0);
+                for d in Dist::vars().take(8) {
+                    let neib = cd + d.as_cd();
+                    let nei_s = self.get(neib)?.surface;
+                    match nei_s {
+                        Surface::Floor => cnt_f += 1,
+                        Surface::Road => cnt_r += 1,
+                        _ => {}
+                    }
+                }
+                if cnt_f >= cnt_r {
+                    Dangeon::can_move_sub(Surface::Floor, nxt_sur, d)
+                } else {
+                    Dangeon::can_move_sub(Surface::Road, nxt_sur, d)
+                }
+            }
+            _ => Dangeon::can_move_sub(cur_sur, nxt_sur, d),
+        }
     }
 }
 
@@ -273,6 +324,7 @@ pub struct Coord {
     pub y: i32,
 }
 
+float_alias!(EucDist, f64);
 impl Coord {
     pub fn new<T: Into<i32> + Copy>(x: T, y: T) -> Coord {
         Coord {
@@ -286,9 +338,13 @@ impl Coord {
             dist: d.as_cd(),
         }
     }
-
     fn range_ok(&self) -> bool {
         self.x >= 0 && self.y >= 0 && self.x < COLUMNS as _ && self.y < LINES as _
+    }
+    pub fn dist_euc(&self, other: &Coord) -> EucDist {
+        let x = self.x - other.x;
+        let y = self.y - other.y;
+        EucDist(((x * x + y * y) as f64).sqrt())
     }
 }
 

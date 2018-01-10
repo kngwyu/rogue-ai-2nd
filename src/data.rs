@@ -380,7 +380,7 @@ pub struct EnemyHist {
     pub hp_ex: DamageVal,
     pub running: bool,
     pub typ: Enemy,
-    pub visible: bool,
+    pub visible: bool, // このフィールドは探索時は無視
 }
 
 impl EnemyHist {
@@ -703,6 +703,7 @@ pub struct ItemPack {
     pub name: String,
     pub num: u32,
     pub typ: Item,
+    pub val: Option<i32>, // Armorの固有値など
 }
 
 impl ItemPack {
@@ -712,6 +713,7 @@ impl ItemPack {
             name: name.to_owned(),
             num: num,
             typ: typ,
+            val: None,
         }
     }
 }
@@ -775,7 +777,7 @@ impl Weapon {
             Weapon::Dart => WeaponStatus::new(type1, Dice::new(1, 1), Dice::new(1, 3)),
             Weapon::Shuriken => WeaponStatus::new(type1, Dice::new(1, 2), Dice::new(2, 4)),
             Weapon::Spear => WeaponStatus::new(type2, Dice::new(2, 3), Dice::new(1, 6)),
-            Weapon::None => WeaponStatus::default(),
+            Weapon::None => WeaponStatus::new(type0, Dice::new(1, 4), Dice::default()),
         }
     }
     pub fn has_attr(self, attr: WeaponAttr) -> bool {
