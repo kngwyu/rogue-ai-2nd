@@ -28,7 +28,7 @@ pub fn hit_rate_deffence(player: &PlayerStatus, ene: &Enemy) -> ProbVal {
     hit_rate_sub(ene.level(), arm as i32, 1)
 }
 
-pub fn exdam_attack(player: &PlayerStatus, weapon: Weapon, throw: bool) -> DamageVal {
+pub fn expect_dam_attack(player: &PlayerStatus, weapon: Weapon, throw: bool) -> DamageVal {
     let dice = if throw {
         weapon.throw()
     } else {
@@ -39,7 +39,7 @@ pub fn exdam_attack(player: &PlayerStatus, weapon: Weapon, throw: bool) -> Damag
 }
 
 // 補正値はたぶんない
-pub fn exdam_deffence(enem: Enemy) -> DamageVal {
+pub fn expect_dam_deffence(enem: Enemy) -> DamageVal {
     enem.attack().expect_val()
 }
 
@@ -135,5 +135,12 @@ mod test {
         assert_approx_eq!(*Dice::new(3, 6).expect_val(), 10.5);
         let v = vec![Dice::new(1, 6), Dice::new(1, 5)];
         assert_approx_eq!(*v.expect_val(), 6.5);
+    }
+    #[test]
+    fn hit_rate_test() {
+        let player = PlayerStatus::initial();
+        let ene = EnemyHist::from_type(Enemy::Emu);
+        println!("{:?}", hit_rate_attck(&player, &ene));
+        println!("{:?}", hit_rate_deffence(&player, &ene.typ));
     }
 }

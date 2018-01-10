@@ -5,7 +5,6 @@ use std::str;
 pub struct StatusParse {
     re: Regex,
 }
-int_alias!(Val, i32);
 impl StatusParse {
     #[cfg_attr(feature = "clippy", allow(trivial_regex))]
     pub fn new() -> Self {
@@ -301,7 +300,7 @@ mod test {
             hungry_level: 1,
         };
         assert_eq!(res, parser.parse(text1).unwrap());
-        assert_eq!(parser.parse(text2).unwrap(), PlayerStatus::new());
+        assert_eq!(parser.parse(text2).unwrap(), PlayerStatus::initial());
     }
     #[test]
     fn msg_test() {

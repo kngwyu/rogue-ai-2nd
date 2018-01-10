@@ -91,6 +91,13 @@ impl Dist {
             Stay => Stay,
         }
     }
+    pub fn is_diag(&self) -> bool {
+        use Dist::*;
+        match *self {
+            RightUp | RightDown | LeftUp | LeftDown => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -166,7 +173,7 @@ pub struct PlayerStatus {
 }
 
 impl PlayerStatus {
-    pub fn new() -> PlayerStatus {
+    pub fn initial() -> PlayerStatus {
         PlayerStatus {
             stage_level: 1,
             gold: 0,
@@ -380,6 +387,16 @@ impl EnemyHist {
     pub fn new(typ: Enemy, cd: Coord) -> EnemyHist {
         EnemyHist {
             cd: cd,
+            hp_ex: typ.hp().expect_val(),
+            running: false,
+            typ: typ,
+            visible: true,
+        }
+    }
+    // just for test
+    pub fn from_type(typ: Enemy) -> EnemyHist {
+        EnemyHist {
+            cd: Coord::default(),
             hp_ex: typ.hp().expect_val(),
             running: false,
             typ: typ,

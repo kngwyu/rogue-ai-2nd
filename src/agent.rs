@@ -2,7 +2,7 @@ use consts::*;
 use data::*;
 use dangeon::*;
 use damage::*;
-use parse::{MsgParse, StatusParse, Val};
+use parse::{MsgParse, StatusParse};
 use cgw::{ActionResult, Reactor};
 use std::str;
 use std::cmp::Ordering;
@@ -262,7 +262,7 @@ impl FeudalAgent {
         FeudalAgent {
             stat_parser: StatusParse::new(),
             msg_parser: MsgParse::new(),
-            player_stat: PlayerStatus::new(),
+            player_stat: PlayerStatus::initial(),
             dangeon: Dangeon::default(),
             enemy_list: EnemyList::new(),
             item_list: ItemList::new(),
@@ -386,6 +386,7 @@ impl Reactor for FeudalAgent {
 // 探索部はこっちに持ってきた(見づらいから)
 // 探索用のPlayerState
 const SEARCH_DEPTH_MAX: usize = 8;
+const SEARCH_WIDTH_MAX: usize = 100;
 #[derive(Clone, Debug)]
 struct SearchPlayer {
     cd: Coord,
@@ -416,6 +417,15 @@ impl FeudalAgent {
             actions: Vec::with_capacity(SEARCH_DEPTH_MAX),
             val: ActionVal::default(),
         };
+        let mut state_list = vec![init_state.clone()];
+        for turn in 1..SEARCH_DEPTH_MAX + 1 {
+            state_list.sort_unstable();
+            let mut next_states = Vec::new();
+            for cur_state in state_list {
+                let a = cur_state.val;
+            }
+            state_list = next_states;
+        }
     }
     // 食糧・敵への対処など優先度の高い処理
     fn interupput(&self) {}
@@ -449,6 +459,26 @@ impl FeudalAgent {
             Tactics::None => {}
         }
         None
+    }
+}
+
+impl Ord for SearchState {
+    fn cmp(&self, other: &SearchState) -> Ordering {
+        self.val.cmp(&other.val)
+    }
+}
+
+impl PartialOrd for SearchState {
+    fn partial_cmp(&self, other: &SearchState) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for SearchState {}
+
+impl PartialEq for SearchState {
+    fn eq(&self, other: &SearchState) -> bool {
+        self.val.eq(&other.val)
     }
 }
 
