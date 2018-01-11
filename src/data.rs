@@ -2,6 +2,7 @@
 // enemy data is from https://nethackwiki.com/wiki/Rogue_(game), thanks
 
 use std::slice;
+use std::cmp;
 use dangeon::Coord;
 use cgw::AsciiChar;
 use damage::*;
@@ -31,7 +32,7 @@ macro_rules! enum_with_iter {
     }
 }
 
-enum_with_iter!(Dist {
+enum_with_iter!(Direc {
     Up,
     Down,
     Left,
@@ -43,28 +44,28 @@ enum_with_iter!(Dist {
     Stay,
 });
 
-impl Into<u8> for Dist {
+impl Into<u8> for Direc {
     fn into(self) -> u8 {
         match self {
-            Dist::Stay => b'.',
-            Dist::Up => b'k',
-            Dist::Down => b'j',
-            Dist::Left => b'h',
-            Dist::Right => b'l',
-            Dist::LeftUp => b'y',
-            Dist::RightUp => b'u',
-            Dist::LeftDown => b'b',
-            Dist::RightDown => b'n',
+            Direc::Stay => b'.',
+            Direc::Up => b'k',
+            Direc::Down => b'j',
+            Direc::Left => b'h',
+            Direc::Right => b'l',
+            Direc::LeftUp => b'y',
+            Direc::RightUp => b'u',
+            Direc::LeftDown => b'b',
+            Direc::RightDown => b'n',
         }
     }
 }
 
-impl Dist {
+impl Direc {
     pub fn as_cd(&self) -> Coord {
         macro_rules! cd {
             ($x: expr, $y: expr) => (Coord {x: $x, y: $y})
         }
-        use Dist::*;
+        use Direc::*;
         match *self {
             Stay => cd!(0, 0),
             Up => cd!(0, -1),
@@ -77,8 +78,8 @@ impl Dist {
             LeftUp => cd!(-1, -1),
         }
     }
-    pub fn rotate(&self) -> Dist {
-        use Dist::*;
+    pub fn rotate(&self) -> Direc {
+        use Direc::*;
         match *self {
             Up => RightUp,
             RightUp => Right,
@@ -92,7 +93,7 @@ impl Dist {
         }
     }
     pub fn is_diag(&self) -> bool {
-        use Dist::*;
+        use Direc::*;
         match *self {
             RightUp | RightDown | LeftUp | LeftDown => true,
             _ => false,
@@ -102,9 +103,9 @@ impl Dist {
 
 #[derive(Debug, Copy, Clone)]
 pub enum Action {
-    Move(Dist),
-    Fight(Dist),
-    Throw((Dist, u8)),
+    Move(Direc),
+    Fight(Direc),
+    Throw((Direc, u8)),
     UpStair,
     DownStair,
     Rest,
@@ -210,6 +211,10 @@ impl PlayerStatus {
         let res = self.diff(&new_stat);
         *self = new_stat;
         res
+    }
+    pub fn have_enough_hp(&self) -> bool {
+        let threshold = cmp::max(10, self.max_hp / 2 + 1);
+        self.cur_hp >= threshold
     }
 }
 
@@ -402,6 +407,10 @@ impl EnemyHist {
             typ: typ,
             visible: true,
         }
+    }
+    pub fn is_live(&self) -> bool {
+        let threshold = -0.5;
+        *self.hp_ex > threshold
     }
 }
 

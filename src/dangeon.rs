@@ -1,10 +1,12 @@
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 use std::fmt::Debug;
 use std::cmp::Ordering;
+use std::collections::VecDeque;
 use std::mem;
 use consts::*;
 use data::*;
-
+use agent::ActionVal;
+use damage::ProbVal;
 bitflags! {
     pub struct ExplAttr: u16 {
         const NONE = 0;
@@ -43,17 +45,17 @@ impl Cell {
     pub fn visit(&mut self) {
         self.hist.attr.insert(ExplAttr::VISITED);
     }
-    pub fn go(&mut self, d: Dist) {
+    pub fn go(&mut self, d: Direc) {
         let ins = match d {
-            Dist::Up => ExplAttr::UP,
-            Dist::Down => ExplAttr::DOWN,
-            Dist::Left => ExplAttr::LEFT,
-            Dist::Right => ExplAttr::RIGHT,
-            Dist::LeftUp => ExplAttr::LEFT_UP,
-            Dist::RightUp => ExplAttr::RIGHT_UP,
-            Dist::LeftDown => ExplAttr::LEFT_DOWN,
-            Dist::RightDown => ExplAttr::RIGHT_DOWN,
-            Dist::Stay => return,
+            Direc::Up => ExplAttr::UP,
+            Direc::Down => ExplAttr::DOWN,
+            Direc::Left => ExplAttr::LEFT,
+            Direc::Right => ExplAttr::RIGHT,
+            Direc::LeftUp => ExplAttr::LEFT_UP,
+            Direc::RightUp => ExplAttr::RIGHT_UP,
+            Direc::LeftDown => ExplAttr::LEFT_DOWN,
+            Direc::RightDown => ExplAttr::RIGHT_DOWN,
+            Direc::Stay => return,
         };
         self.hist.attr.insert(ins);
     }
@@ -140,7 +142,7 @@ impl Dangeon {
                 .1,
         )
     }
-    fn can_move_sub(cur: Surface, nxt: Surface, d: Dist) -> Option<bool> {
+    fn can_move_sub(cur: Surface, nxt: Surface, d: Direc) -> Option<bool> {
         match cur {
             Surface::Floor => match nxt {
                 Surface::Floor | Surface::Stair | Surface::Trap => Some(true),
@@ -164,13 +166,13 @@ impl Dangeon {
             _ => None,
         }
     }
-    pub fn can_move(&self, cd: Coord, d: Dist) -> Option<bool> {
+    pub fn can_move(&self, cd: Coord, d: Direc) -> Option<bool> {
         let cur_sur = self.get(cd)?.surface;
         let nxt_sur = self.get(cd + d.as_cd())?.surface;
         match cur_sur {
             Surface::Stair | Surface::Trap => {
                 let (mut cnt_f, mut cnt_r) = (0, 0);
-                for d in Dist::vars().take(8) {
+                for d in Direc::vars().take(8) {
                     let neib = cd + d.as_cd();
                     let nei_s = self.get(neib)?.surface;
                     match nei_s {
@@ -187,6 +189,64 @@ impl Dangeon {
             }
             _ => Dangeon::can_move_sub(cur_sur, nxt_sur, d),
         }
+    }
+    pub fn make_dist_map(&self, start: Coord) -> Option<SimpleMap<i32>> {
+        const INF: i32 = (COLUMNS * LINES) as i32;
+        let mut dist = SimpleMap::new(INF);
+        *dist.get_mut(start)? = 0;
+        let mut que = VecDeque::new();
+        que.push_back(start);
+        while let Some(cd) = que.pop_front() {
+            for &d in Direc::vars().take(8) {
+                let nxt = cd + d.as_cd();
+                let ok = self.can_move(cd, d) == Some(true) && *dist.get(cd)? == INF;
+                if ok {
+                    que.push_back(nxt);
+                    let cur_d = *dist.get(cd)?;
+                    *dist.get_mut(cd)? = cur_d + 1;
+                }
+            }
+        }
+        Some(dist)
+    }
+    pub fn explore_rate(&self) -> ProbVal {
+        let known = self.iter().fold(0, |acc, cell_cd| {
+            if cell_cd.0.surface != Surface::None {
+                acc + 1
+            } else {
+                acc
+            }
+        });
+        let all = LINES * COLUMNS;
+        ProbVal(known as f64 / all as f64)
+    }
+    pub fn explore(&self) -> Option<Coord> {
+        None
+    }
+    pub fn find_stair(&self) -> Option<Coord> {
+        None
+    }
+    pub fn find_nearest_item(&self, cd: Coord) -> Option<(ActionVal, Coord)> {
+        let (cell, cd) = self.iter()
+            .filter(|cell_cd| {
+                if let FieldObject::Item(_) = cell_cd.0.obj {
+                    true
+                } else {
+                    false
+                }
+            })
+            .min_by_key(|cell_cd| cd.dist_euc(&cell_cd.1))?;
+        let act_val = if let FieldObject::Item(item) = cell.obj {
+            let val = match item {
+                Item::Amulet => 500.0,
+                Item::Gold => 50.0,
+                _ => 0.0,
+            };
+            ActionVal(val)
+        } else {
+            ActionVal::default()
+        };
+        None
     }
 }
 
@@ -325,6 +385,16 @@ pub struct Coord {
 }
 
 float_alias!(EucDist, f64);
+
+impl Eq for EucDist {}
+
+impl Ord for EucDist {
+    fn cmp(&self, other: &EucDist) -> Ordering {
+        self.partial_cmp(other)
+            .expect("EucDist: NAN value is compared!")
+    }
+}
+
 impl Coord {
     pub fn new<T: Into<i32> + Copy>(x: T, y: T) -> Coord {
         Coord {
@@ -332,10 +402,10 @@ impl Coord {
             y: y.into(),
         }
     }
-    pub fn dist_iter(&self, d: Dist) -> DistIterator {
-        DistIterator {
+    pub fn direc_iter(&self, d: Direc) -> DirecIterator {
+        DirecIterator {
             cur: *self,
-            dist: d.as_cd(),
+            direc: d.as_cd(),
         }
     }
     fn range_ok(&self) -> bool {
@@ -390,19 +460,19 @@ impl Ord for Coord {
     }
 }
 
-pub struct DistIterator {
+pub struct DirecIterator {
     cur: Coord,
-    dist: Coord,
+    direc: Coord,
 }
 
-impl Iterator for DistIterator {
+impl Iterator for DirecIterator {
     type Item = Coord;
     fn next(&mut self) -> Option<Coord> {
         if !self.cur.range_ok() {
             return None;
         }
         let res = self.cur;
-        self.cur += self.dist;
+        self.cur += self.direc;
         Some(res)
     }
 }
@@ -417,7 +487,7 @@ mod test {
         for (cell_ref, cd) in d.iter_mut() {
             cell_ref.obj = FieldObject::Player;
         }
-        for cd in Coord::new(5, 5).dist_iter(Dist::Right) {
+        for cd in Coord::new(5, 5).direc_iter(Direc::Right) {
             println!("{:?}", cd);
         }
     }

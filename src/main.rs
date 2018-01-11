@@ -48,7 +48,7 @@ fn main() {
                 *LEVEL,
                 OpenMode::Truncate,
             )))
-            .max_loop(10);
+            .max_loop(100);
         if MATCHES.is_present("VIS") {
             gs = gs.draw_on(Duration::from_millis(150));
         }
