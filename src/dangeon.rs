@@ -81,11 +81,6 @@ pub trait CoordGetMut {
     fn get_mut(&mut self, c: Coord) -> Option<&mut Self::Item>;
 }
 
-pub struct Dangeon {
-    inner: Vec<Vec<Cell>>,
-    empty: bool,
-}
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum DangeonMsg {
     FindNew,
@@ -95,6 +90,22 @@ pub enum DangeonMsg {
 
 default_none!(DangeonMsg);
 
+// ダンジョンの内部表現
+#[derive(Debug, Clone)]
+pub struct Dangeon {
+    inner: Vec<Vec<Cell>>,
+    empty: bool,
+}
+
+impl Default for Dangeon {
+    fn default() -> Dangeon {
+        Dangeon {
+            inner: vec![vec![Cell::default(); COLUMNS]; LINES],
+            empty: true,
+        }
+    }
+}
+
 impl Dangeon {
     pub fn is_empty(&self) -> bool {
         self.empty
@@ -103,13 +114,14 @@ impl Dangeon {
         let mut res = DangeonMsg::default();
         for (cell_mut, cd) in self.iter_mut() {
             let c = orig[cd.y as usize][cd.x as usize];
-            if c == b'/' {
+            if c == b'\\' {
                 return DangeonMsg::Die;
             }
             cell_mut.obj = FieldObject::from(c);
             if cell_mut.surface == Surface::None {
-                cell_mut.surface = Surface::from(c);
-                if cell_mut.surface != Surface::None {
+                let cur_surface = Surface::from(c);
+                cell_mut.surface = cur_surface;
+                if cur_surface != Surface::None {
                     res = DangeonMsg::FindNew;
                 }
             }
@@ -142,6 +154,16 @@ impl Dangeon {
                 .1,
         )
     }
+    fn guess_floor(&self, cd: Coord) -> Option<Surface> {
+        for d in &[Direc::Up, Direc::Right, Direc::RightUp, Direc::RightDown] {
+            let s1 = self.get(cd + d.to_cd())?.surface;
+            let s2 = self.get(cd + d.rotate_n(4).to_cd())?.surface;
+            if s1 == s2 {
+                return Some(s1);
+            }
+        }
+        None
+    }
     fn can_move_sub(cur: Surface, nxt: Surface, d: Direc) -> Option<bool> {
         match cur {
             Surface::Floor => match nxt {
@@ -151,41 +173,28 @@ impl Dangeon {
                 _ => None,
             },
             Surface::Road => match nxt {
-                Surface::Road | Surface::Stair | Surface::Trap | Surface::Door => Some(d.is_diag()),
+                Surface::Road | Surface::Stair | Surface::Trap | Surface::Door => {
+                    Some(!d.is_diag())
+                }
                 Surface::Wall => Some(false),
                 _ => None,
             },
             Surface::Door => match nxt {
                 Surface::Road | Surface::Stair | Surface::Trap | Surface::Door | Surface::Floor => {
-                    Some(d.is_diag())
+                    Some(!d.is_diag())
                 }
                 Surface::Wall => Some(false),
                 _ => None,
             },
-
             _ => None,
         }
     }
     pub fn can_move(&self, cd: Coord, d: Direc) -> Option<bool> {
         let cur_sur = self.get(cd)?.surface;
-        let nxt_sur = self.get(cd + d.as_cd())?.surface;
+        let nxt_sur = self.get(cd + d.to_cd())?.surface;
         match cur_sur {
-            Surface::Stair | Surface::Trap => {
-                let (mut cnt_f, mut cnt_r) = (0, 0);
-                for d in Direc::vars().take(8) {
-                    let neib = cd + d.as_cd();
-                    let nei_s = self.get(neib)?.surface;
-                    match nei_s {
-                        Surface::Floor => cnt_f += 1,
-                        Surface::Road => cnt_r += 1,
-                        _ => {}
-                    }
-                }
-                if cnt_f >= cnt_r {
-                    Dangeon::can_move_sub(Surface::Floor, nxt_sur, d)
-                } else {
-                    Dangeon::can_move_sub(Surface::Road, nxt_sur, d)
-                }
+            Surface::Stair | Surface::Trap | Surface::None => {
+                Dangeon::can_move_sub(self.guess_floor(cd)?, nxt_sur, d)
             }
             _ => Dangeon::can_move_sub(cur_sur, nxt_sur, d),
         }
@@ -198,12 +207,11 @@ impl Dangeon {
         que.push_back(start);
         while let Some(cd) = que.pop_front() {
             for &d in Direc::vars().take(8) {
-                let nxt = cd + d.as_cd();
-                let ok = self.can_move(cd, d) == Some(true) && *dist.get(cd)? == INF;
+                let nxt = cd + d.to_cd();
+                let ok = self.can_move(cd, d) == Some(true) && *dist.get(nxt)? == INF;
                 if ok {
                     que.push_back(nxt);
-                    let cur_d = *dist.get(cd)?;
-                    *dist.get_mut(cd)? = cur_d + 1;
+                    *dist.get_mut(nxt)? = *dist.get(cd)? + 1;
                 }
             }
         }
@@ -229,6 +237,7 @@ impl Dangeon {
         Some(cd.1)
     }
     pub fn find_nearest_item(&self, cd: Coord) -> Option<(ActionVal, Coord)> {
+        let dist = self.make_dist_map(cd)?;
         let (cell, cd) = self.iter()
             .filter(|cell_cd| {
                 if let FieldObject::Item(_) = cell_cd.0.obj {
@@ -237,7 +246,7 @@ impl Dangeon {
                     false
                 }
             })
-            .min_by_key(|cell_cd| cd.dist_euc(&cell_cd.1))?;
+            .min_by_key(|cell_cd| *dist.get(cell_cd.1).unwrap_or(&0))?;
         let act_val = if let FieldObject::Item(item) = cell.obj {
             let val = match item {
                 Item::Potion => 14.0,
@@ -281,15 +290,6 @@ impl CoordGetMut for Dangeon {
             return None;
         }
         Some(&mut self.inner[c.y as usize][c.x as usize])
-    }
-}
-
-impl Default for Dangeon {
-    fn default() -> Dangeon {
-        Dangeon {
-            inner: vec![vec![Cell::default(); COLUMNS]; LINES],
-            empty: true,
-        }
     }
 }
 
@@ -387,6 +387,8 @@ where
     }
 }
 
+int_alias!(BlockVal, u8);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
 pub struct Coord {
     pub x: i32,
@@ -403,7 +405,6 @@ impl Ord for EucDist {
             .expect("EucDist: NAN value is compared!")
     }
 }
-
 impl Coord {
     pub fn new<T: Into<i32> + Copy>(x: T, y: T) -> Coord {
         Coord {
@@ -414,7 +415,7 @@ impl Coord {
     pub fn direc_iter(&self, d: Direc) -> DirecIterator {
         DirecIterator {
             cur: *self,
-            direc: d.as_cd(),
+            direc: d.to_cd(),
         }
     }
     fn range_ok(&self) -> bool {
@@ -425,6 +426,13 @@ impl Coord {
         let y = self.y - other.y;
         EucDist(((x * x + y * y) as f64).sqrt())
     }
+    // 未探索区域を知るために9分割する
+    //  0 | 1 | 2
+    //  -   -   -
+    //  3 | 4 | 5
+    //  -   -   -
+    //  6 | 7 | 8
+    // pub fn block(&self) -> BlockVal {}
 }
 
 impl Add for Coord {
@@ -488,16 +496,70 @@ impl Iterator for DirecIterator {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+    const MAP1: &str = "
+                            ----------
+                            |........|                    ------
+ ------------------------- #+........|                    |....|
+ |.......................| #|.?......+####################+....|
+ |...%...................+##----------                    |....|
+ ---------+---------------                                ----+-
+          #                                                ####
+          #########                                    ----+-----
+ -----------------+------- ##########################  |........|
+ |......@................+###                       #  |........|
+ |.......................|  #                       #  |.....*..|
+ |.......................|  #                       #  |........|
+ |.......................|  #                       ###+........|
+ ----------------+--------  #                          ---+------
+                ##          ###########                   #######
+   -------------+--        -----------+----                  ---+-
+   |..............| #######+..............+############      |...|
+   |..............| #      |.!............|           #      |...|
+   |..............+##      |..............|           #      |...|
+   |..............|        ----------------           #      |...|
+   ----------------                                   #######+...|
+                                                             -----
+";
     #[test]
-    fn dangeon_test() {
-        use dangeon::*;
-        let mut d = Dangeon::default();
-        println!(">_<");
-        for (cell_ref, cd) in d.iter_mut() {
-            cell_ref.obj = FieldObject::Player;
+    fn test_distmap() {
+        let d = make_dangeon(&MAP1);
+        let cur = d.player_cd().unwrap();
+        assert_eq!(cur, Coord::new(8, 9));
+        let item = d.find_nearest_item(cur).unwrap();
+        assert_approx_eq!(*item.0, 10.0);
+        let stair = d.find_stair().unwrap();
+        let dist = d.make_dist_map(cur).unwrap();
+        assert_eq!(d.can_move(stair, Direc::RightUp), Some(true));
+        assert_eq!(d.can_move(stair, Direc::Down), Some(false));
+        assert_eq!(28, *dist.get(stair).unwrap());
+        println!("{:?}", d.explore_rate());
+    }
+    use std::io::{BufRead, BufReader};
+    use std::str;
+    fn make_dangeon(s: &str) -> Dangeon {
+        let mut res = Dangeon::default();
+        {
+            let mut orig = Vec::new();
+            let mut buf = String::new();
+            let mut reader = BufReader::new(s.as_bytes());
+            while let Ok(n) = reader.read_line(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                buf.pop();
+                if buf.is_empty() {
+                    continue;
+                }
+                let mut v = buf.as_bytes().to_owned();
+                while v.len() < COLUMNS {
+                    v.push(b' ');
+                }
+                orig.push(v);
+                buf.clear();
+            }
+            res.merge(&orig);
         }
-        for cd in Coord::new(5, 5).direc_iter(Direc::Right) {
-            println!("{:?}", cd);
-        }
+        res
     }
 }

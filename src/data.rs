@@ -61,7 +61,7 @@ impl Into<u8> for Direc {
 }
 
 impl Direc {
-    pub fn as_cd(&self) -> Coord {
+    pub fn to_cd(&self) -> Coord {
         macro_rules! cd {
             ($x: expr, $y: expr) => (Coord {x: $x, y: $y})
         }
@@ -91,6 +91,10 @@ impl Direc {
             LeftUp => Up,
             Stay => Stay,
         }
+    }
+    pub fn rotate_n(&self, n: usize) -> Direc {
+        let n = n % 8;
+        (0..n).fold(*self, |acc, _| acc.rotate())
     }
     pub fn is_diag(&self) -> bool {
         use Direc::*;

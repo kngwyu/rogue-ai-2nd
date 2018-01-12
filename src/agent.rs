@@ -77,7 +77,7 @@ impl EnemyList {
                     }
                 };
                 let mut merged = Direc::vars().any(|direc| {
-                    let search_cd = cd + direc.as_cd();
+                    let search_cd = cd + direc.to_cd();
                     let mut res = false;
                     exec_merge!(search_cd, res, *direc != Direc::Stay);
                     res
@@ -85,7 +85,7 @@ impl EnemyList {
                 if !merged && enem.has_attr(EnemyAttr::FLYING) {
                     merged = Direc::vars().any(|direc| {
                         let mut res = false;
-                        for &plus_cd in [direc.as_cd(), direc.rotate().as_cd()].iter() {
+                        for &plus_cd in [direc.to_cd(), direc.rotate().to_cd()].iter() {
                             let search_cd = cd + plus_cd;
                             exec_merge!(search_cd, res, true);
                             if res {
@@ -229,7 +229,7 @@ impl Eq for ActionVal {}
 impl Ord for ActionVal {
     fn cmp(&self, other: &ActionVal) -> Ordering {
         self.partial_cmp(other)
-            .expect("NAN value is compared!: ActionVal")
+            .expect("ActionVal: NAN value is compared!")
     }
 }
 
@@ -418,7 +418,7 @@ impl FeudalAgent {
         let cd = self.play_info.cd;
         let cur_dist = *dist.get(cd)?;
         for &d in Direc::vars().take(8) {
-            let nxt = cd + d.as_cd();
+            let nxt = cd + d.to_cd();
             if self.dangeon.can_move(cd, d) == Some(true) && *dist.get(nxt)? < cur_dist {
                 return Some(d);
             }
@@ -429,7 +429,7 @@ impl FeudalAgent {
         let d = self.move_to_dest_sub()?;
         let mut res = self.play_info.clone();
         res.act = Action::Move(d);
-        res.cd += d.as_cd();
+        res.cd += d.to_cd();
         Some(res)
     }
     fn rethink(&mut self) -> Option<PlayInfo> {
@@ -535,7 +535,7 @@ impl Reactor for FeudalAgent {
                     GameMsg::Defeated(_) => {
                         self.msg_flags.defeated = true;
                         let _removed = match self.play_info.act {
-                            Action::Move(d) | Action::Fight(d) => self.enemy_list.remove(d.as_cd()),
+                            Action::Move(d) | Action::Fight(d) => self.enemy_list.remove(d.to_cd()),
                             Action::Throw((d, _)) => {
                                 let mut diter = self.play_info.cd.direc_iter(d);
                                 diter.any(|cd| self.enemy_list.remove(cd))
@@ -552,7 +552,7 @@ impl Reactor for FeudalAgent {
                                     DamageVal::default()
                                 }
                             };
-                            if let Some(hist_mut) = self.enemy_list.get_mut(d.as_cd()) {
+                            if let Some(hist_mut) = self.enemy_list.get_mut(d.to_cd()) {
                                 hist_mut.hp_ex -= dam;
                             }
                         }
@@ -586,6 +586,7 @@ impl Reactor for FeudalAgent {
                     self.next_stage();
                 }
                 let dangeon_msg = self.dangeon.merge(&map[1..(LINES + 1)]);
+                trace!(LOGGER, "dangeon_msg: {:?}", dangeon_msg);
                 if dangeon_msg == DangeonMsg::None {
                     return Some(Action::Die.into());
                 }
@@ -680,7 +681,7 @@ mod enemy_search {
                     if !can_move {
                         return None;
                     }
-                    let ncd = cur_cd + d.as_cd();
+                    let ncd = cur_cd + d.to_cd();
                     if let Some(enem_ref) = next_state.enemy_list.get_mut(ncd) {
                         let prob = hit_rate_attack(&agent.player_stat, &enem_ref);
                         let dam = expect_dam_attack(&agent.player_stat, state.player.wield, false);
@@ -732,7 +733,7 @@ mod enemy_search {
             }
             // 殴れるかチェック
             for d in Direc::vars() {
-                let cd = enem_ref.cd + d.as_cd();
+                let cd = enem_ref.cd + d.to_cd();
                 if cd == cur_cd {
                     let prob = hit_rate_deffence(&agent.player_stat, &enem_ref.typ);
                     let dam = expect_dam_deffence(enem_ref.typ);
@@ -744,7 +745,7 @@ mod enemy_search {
             }
             let cur_dist = cur_cd.dist_euc(&enem_ref.cd);
             for d in Direc::vars() {
-                let cd = enem_ref.cd + d.as_cd();
+                let cd = enem_ref.cd + d.to_cd();
                 let dist = cur_cd.dist_euc(&cd);
                 if dist < cur_dist {
                     enem_ref.cd = cd;
