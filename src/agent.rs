@@ -441,8 +441,9 @@ impl FeudalAgent {
         } else {
             200.0
         });
-        let (item, item_cd) = self.dangeon.find_item().unwrap_or_default();
-
+        let (item, item_cd) = self.dangeon
+            .find_nearest_item(self.play_info.cd)
+            .unwrap_or_default();
         None
     }
     fn action_sub(&mut self, dangeon_msg: DangeonMsg) -> Option<Vec<u8>> {

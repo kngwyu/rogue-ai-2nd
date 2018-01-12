@@ -224,7 +224,9 @@ impl Dangeon {
         None
     }
     pub fn find_stair(&self) -> Option<Coord> {
-        None
+        let cd = self.iter()
+            .find(|&cell_cd| cell_cd.0.surface == Surface::Stair)?;
+        Some(cd.1)
     }
     pub fn find_nearest_item(&self, cd: Coord) -> Option<(ActionVal, Coord)> {
         let (cell, cd) = self.iter()
@@ -238,15 +240,22 @@ impl Dangeon {
             .min_by_key(|cell_cd| cd.dist_euc(&cell_cd.1))?;
         let act_val = if let FieldObject::Item(item) = cell.obj {
             let val = match item {
-                Item::Amulet => 500.0,
-                Item::Gold => 50.0,
-                _ => 0.0,
+                Item::Potion => 14.0,
+                Item::Scroll => 10.0,
+                Item::Armor(_) => 20.0,
+                Item::Weapon(_) => 20.0,
+                Item::Wand => 10.0,
+                Item::Food(_) => 20.0,
+                Item::Gold => 30.0,
+                Item::Ring => 10.0,
+                Item::Amulet => 100.0,
+                Item::None => 0.0,
             };
             ActionVal(val)
         } else {
             ActionVal::default()
         };
-        None
+        Some((act_val, cd))
     }
 }
 
