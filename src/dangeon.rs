@@ -137,11 +137,11 @@ impl Dangeon {
     }
     pub fn iter(&self) -> CoordIter<Dangeon> {
         CoordIter {
-            content: &self,
+            content: self,
             cd: Coord::default(),
         }
     }
-    pub fn iter_mut<'a>(&'a mut self) -> CoordIterMut<Dangeon> {
+    pub fn iter_mut(&mut self) -> CoordIterMut<Dangeon> {
         CoordIterMut {
             content: self,
             cd: Coord::default(),
@@ -218,15 +218,15 @@ impl Dangeon {
         Some(dist)
     }
     pub fn explore_rate(&self) -> ProbVal {
-        let known = self.iter().fold(0, |acc, cell_cd| {
+        let known = self.iter().fold(0f64, |acc, cell_cd| {
             if cell_cd.0.surface != Surface::None {
-                acc + 1
+                acc + 1.0
             } else {
                 acc
             }
         });
         let all = LINES * COLUMNS;
-        ProbVal(known as f64 / all as f64)
+        ProbVal(known / all as f64)
     }
     pub fn explore(&self) -> Option<Coord> {
         None
@@ -248,19 +248,7 @@ impl Dangeon {
             })
             .min_by_key(|cell_cd| *dist.get(cell_cd.1).unwrap_or(&0))?;
         let act_val = if let FieldObject::Item(item) = cell.obj {
-            let val = match item {
-                Item::Potion => 14.0,
-                Item::Scroll => 10.0,
-                Item::Armor(_) => 20.0,
-                Item::Weapon(_) => 20.0,
-                Item::Wand => 10.0,
-                Item::Food(_) => 20.0,
-                Item::Gold => 30.0,
-                Item::Ring => 10.0,
-                Item::Amulet => 100.0,
-                Item::None => 0.0,
-            };
-            ActionVal(val)
+            ActionVal::from_item(item)
         } else {
             ActionVal::default()
         };
@@ -306,7 +294,7 @@ impl<T: Copy + Debug> SimpleMap<T> {
     }
     pub fn iter(&self) -> CoordIter<SimpleMap<T>> {
         CoordIter {
-            content: &self,
+            content: self,
             cd: Coord::default(),
         }
     }
@@ -424,7 +412,7 @@ impl Coord {
     pub fn dist_euc(&self, other: &Coord) -> EucDist {
         let x = self.x - other.x;
         let y = self.y - other.y;
-        EucDist(((x * x + y * y) as f64).sqrt())
+        EucDist(f64::from(x * x + y * y).sqrt())
     }
     // 未探索区域を知るために9分割する
     //  0 | 1 | 2

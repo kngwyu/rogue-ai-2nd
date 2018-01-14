@@ -12,7 +12,7 @@ fn hit_rate_sub(level: i32, armor: i32, correct: i32) -> ProbVal {
     let mut val = level + armor + correct;
     val = min(val, 20);
     val = max(val, 0);
-    ProbVal(val as f64 / 20.0f64)
+    ProbVal(f64::from(val) / 20.0f64)
 }
 
 // 補正値はRunningとstrength以外考慮しない
@@ -25,7 +25,7 @@ pub fn hit_rate_attack(player: &PlayerStatus, ene: &EnemyHist) -> ProbVal {
 // 補正値は考慮しない
 pub fn hit_rate_deffence(player: &PlayerStatus, ene: &Enemy) -> ProbVal {
     let arm = 10 - player.arm;
-    hit_rate_sub(ene.level(), arm as i32, 1)
+    hit_rate_sub(ene.level(), i32::from(arm), 1)
 }
 
 pub fn expect_dam_attack(player: &PlayerStatus, weapon: Weapon, throw: bool) -> DamageVal {
@@ -34,7 +34,7 @@ pub fn expect_dam_attack(player: &PlayerStatus, weapon: Weapon, throw: bool) -> 
     } else {
         weapon.wield()
     };
-    let plus = DamageVal(add_dam(player.cur_str).unwrap_or_default() as f64);
+    let plus = DamageVal(f64::from(add_dam(player.cur_str).unwrap_or_default()));
     dice.expect_val() + plus
 }
 
@@ -64,19 +64,21 @@ pub trait DiceDamage {
 
 impl DiceDamage for Dice {
     fn expect_val(self) -> DamageVal {
-        let sum = (1..self.typ + 1).fold(0f64, |acc, x| acc + x as f64);
-        DamageVal((sum * self.num as f64) / self.typ as f64)
+        let sum = (1..self.typ + 1).fold(0f64, |acc, x| acc + f64::from(x));
+        DamageVal(sum * f64::from(self.num) / f64::from(self.typ))
     }
     fn random_val(self) -> DamageVal {
         let mut rng = thread_rng();
-        let sum = (0..self.num).fold(0.0, |acc, _| acc + rng.gen_range(0, self.typ) as f64 + 1.0);
+        let sum = (0..self.num).fold(0.0, |acc, _| {
+            acc + f64::from(rng.gen_range(0, self.typ)) + 1.0
+        });
         DamageVal(sum)
     }
     fn min_val(self) -> DamageVal {
-        DamageVal(self.num as f64)
+        DamageVal(f64::from(self.num))
     }
     fn max_val(self) -> DamageVal {
-        DamageVal((self.num * self.typ) as f64)
+        DamageVal(f64::from(self.num * self.typ))
     }
 }
 

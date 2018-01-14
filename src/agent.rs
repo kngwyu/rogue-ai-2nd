@@ -52,10 +52,10 @@ impl EnemyList {
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
-    fn iter<'a>(&'a self) -> SliceIter<'a, EnemyHist> {
+    fn iter(&self) -> SliceIter<EnemyHist> {
         self.0.iter()
     }
-    fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, EnemyHist> {
+    fn iter_mut(&mut self) -> SliceIterMut<EnemyHist> {
         self.0.iter_mut()
     }
     fn merge(&mut self, dangeon: &Dangeon) {
@@ -85,7 +85,7 @@ impl EnemyList {
                 if !merged && enem.has_attr(EnemyAttr::FLYING) {
                     merged = Direc::vars().any(|direc| {
                         let mut res = false;
-                        for &plus_cd in [direc.to_cd(), direc.rotate().to_cd()].iter() {
+                        for &plus_cd in &[direc.to_cd(), direc.rotate().to_cd()] {
                             let search_cd = cd + plus_cd;
                             exec_merge!(search_cd, res, true);
                             if res {
@@ -197,7 +197,7 @@ impl ItemList {
         }
         None
     }
-    fn iter<'a>(&'a self) -> SliceIter<'a, ItemPack> {
+    fn iter(&self) -> SliceIter<ItemPack> {
         self.0.iter()
     }
 }
@@ -235,7 +235,7 @@ impl Ord for ActionVal {
 
 impl ActionVal {
     fn from_gold(i: i32) -> ActionVal {
-        ActionVal(i as f64)
+        ActionVal(f64::from(i))
     }
     fn from_my_dam(d: DamageVal) -> ActionVal {
         -ActionVal(*d * 40.0)
@@ -244,7 +244,7 @@ impl ActionVal {
         ActionVal(*d * 10.0)
     }
     fn from_exp(i: i32) -> ActionVal {
-        ActionVal((i * 4) as f64)
+        ActionVal(f64::from(i * 4))
     }
     fn from_hung(hung: i8) -> ActionVal {
         match hung {
@@ -252,6 +252,20 @@ impl ActionVal {
             2i8 => ActionVal(500.0),
             _ => ActionVal::default(),
         }
+    }
+    pub fn from_item(i: Item) -> ActionVal {
+        ActionVal(match i {
+            Item::Potion => 14.0,
+            Item::Scroll => 10.0,
+            Item::Armor(_) => 20.0,
+            Item::Weapon(_) => 20.0,
+            Item::Wand => 10.0,
+            Item::Food(_) => 20.0,
+            Item::Gold => 30.0,
+            Item::Ring => 10.0,
+            Item::Amulet => 100.0,
+            Item::None => 0.0,
+        })
     }
     fn death() -> ActionVal {
         -ActionVal(1000.0)
@@ -622,7 +636,7 @@ mod enemy_search {
         fn initial(agent: &FeudalAgent) -> SearchPlayer {
             SearchPlayer {
                 cd: agent.play_info.cd,
-                hp_exp: DamageVal(agent.player_stat.cur_hp as _),
+                hp_exp: DamageVal(f64::from(agent.player_stat.cur_hp)),
                 wield: agent.cur_weapon().unwrap_or_default(),
                 throw: agent.throw_weapon(),
             }
@@ -683,7 +697,7 @@ mod enemy_search {
                     }
                     let ncd = cur_cd + d.to_cd();
                     if let Some(enem_ref) = next_state.enemy_list.get_mut(ncd) {
-                        let prob = hit_rate_attack(&agent.player_stat, &enem_ref);
+                        let prob = hit_rate_attack(&agent.player_stat, enem_ref);
                         let dam = expect_dam_attack(&agent.player_stat, state.player.wield, false);
                         let dam = dam * DamageVal(*prob);
                         cause_damage(enem_ref, dam);
@@ -701,7 +715,7 @@ mod enemy_search {
                             _ => {}
                         }
                         if let Some(enem_ref) = next_state.enemy_list.get_mut(cd) {
-                            let prob = hit_rate_attack(&agent.player_stat, &enem_ref);
+                            let prob = hit_rate_attack(&agent.player_stat, enem_ref);
                             let dam = expect_dam_attack(&agent.player_stat, throw_weap, true);
                             let dam = dam * DamageVal(*prob);
                             cause_damage(enem_ref, dam);
@@ -764,7 +778,7 @@ mod enemy_search {
         next_state.actions.push(action);
         Some(next_state)
     }
-    pub fn select_throw(weapons: &Vec<(Weapon, u32)>) -> Option<Weapon> {
+    pub fn select_throw(weapons: &[(Weapon, u32)]) -> Option<Weapon> {
         if weapons.is_empty() {
             return None;
         }
@@ -818,7 +832,7 @@ mod enemy_search {
                         if let Some(mut ns) =
                             simulate_act(agent, cur_state, TryAction::Throw((d, w)))
                         {
-                            for wep in ns.player.throw.iter_mut() {
+                            for wep in &mut ns.player.throw {
                                 if wep.0 == w {
                                     wep.1 -= 1;
                                 }
