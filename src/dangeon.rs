@@ -523,6 +523,7 @@ mod test {
         assert_eq!(28, *dist.get(stair).unwrap());
         println!("{:?}", d.explore_rate());
     }
+
     use std::io::{BufRead, BufReader};
     use std::str;
     fn make_dangeon(s: &str) -> Dangeon {
@@ -532,10 +533,9 @@ mod test {
             let mut buf = String::new();
             let mut reader = BufReader::new(s.as_bytes());
             while let Ok(n) = reader.read_line(&mut buf) {
-                if n == 0 {
+                if n == 0 || buf.pop() != Some('\n') {
                     break;
                 }
-                buf.pop();
                 if buf.is_empty() {
                     continue;
                 }
