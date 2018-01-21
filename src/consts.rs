@@ -42,3 +42,4 @@ lazy_static!{
 
 pub const COLUMNS: usize = 80;
 pub const LINES: usize = 22;
+pub const INF_DIST: i32 = (COLUMNS * LINES) as i32;

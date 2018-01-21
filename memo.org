@@ -3,10 +3,15 @@
 - アイテム→追加&fetchする
 - 敵→履歴に保存する
 ** 行動決定時に考慮すること
-*** 探索
-- どのくらい探索したか
-- 階段は発見したか(優先度高)
-- アイテムは十分拾ったか
+*** Explore
+- Exploreするかどうか
+  - アイテムは十分拾ったか
+  - どのくらい探索したか
+  - 階段は発見したか
+- どこをExploreするか
+  - (sを使う場合も含めて)評価値を算出
+  - 評価値は(例えば) 到達する場所の広さの期待値 * 100 / かかる手間の期待値 とか？ 
+  - 
 *** 敵
 - 敵がいるか
 - いるなら、戦うべきか
@@ -50,8 +55,15 @@
   - !on(*tp, ISRUN) && rnd(3) != 0 && on(*tp, ISMEAN) &&..
     - つまりMEANでも33%の確率でプレイヤーに近づき出さない
   - MedusaとGreedyなMonsterは特殊判定あり
+- 探索(searchコマンド)
+  - 状態異常値(sv): ISHALU: 3 ISBLIND 2
+  - ドアの場合: 1 / (5 + sv)
+  - 通路の場合: 1 / (2 + sv)
+  - 隠し通路出現率をp、隠し通路が存在する確率をqとすると、n回探索した時に通路が見つかる確率は
+    - 1 * q * (1.0 - (1.0-p)^n)
 - アーマー
   - アーマークラス
+  - 表示されるのは10 - obj->o_arm
 #+BEGIN_SRC c
 int a_class[MAXARMORS] = {		/* Armor class for each armor type */
 	8,	/* LEATHER */
@@ -64,5 +76,3 @@ int a_class[MAXARMORS] = {		/* Armor class for each armor type */
 	3,	/* PLATE_MAIL */
 };
 #+END_SRC
-  - 表示されるのは10 - obj->o_arm
-  - 

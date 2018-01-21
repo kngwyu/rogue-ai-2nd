@@ -7,7 +7,7 @@ use rand::{thread_rng, Rng};
 float_alias!(DamageVal, f64);
 float_alias!(ProbVal, f64, -0.1 => 1.1);
 
-// 攻撃するがわのレベル、アーマー(10 - 実際の表示)、補正値
+// 攻撃する側のレベル、アーマー(10 - 実際の表示)、補正値
 fn hit_rate_sub(level: i32, armor: i32, correct: i32) -> ProbVal {
     let mut val = level + armor + correct;
     val = min(val, 20);

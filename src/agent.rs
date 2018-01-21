@@ -272,6 +272,7 @@ impl ActionVal {
     }
 }
 
+#[macro_export]
 macro_rules! comp_action {
     ($($val:expr), *) => ({
         let comp_vec = vec![$($val),*];
@@ -754,7 +755,7 @@ mod enemy_search {
                     let dam = dam * DamageVal(*prob);
                     next_state.player.hp_exp -= dam;
                     received_dam += dam;
-                    break 'outer;
+                    continue 'outer;
                 }
             }
             let cur_dist = cur_cd.dist_euc(&enem_ref.cd);
@@ -875,12 +876,6 @@ mod enemy_search {
 #[cfg(test)]
 mod test {
     use super::*;
-    #[test]
-    fn num_cpus() {
-        use num_cpus;
-        let num = num_cpus::get();
-        println!("{}", num);
-    }
     #[test]
     fn cmp_act() {
         let a = ActionVal(5.0);

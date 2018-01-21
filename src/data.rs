@@ -859,6 +859,18 @@ impl Surface {
     pub fn blank() -> u8 {
         b' '
     }
+    pub fn need_guess(&self) -> bool {
+        match *self {
+            Surface::Stair | Surface::Trap | Surface::None => true,
+            _ => false,
+        }
+    }
+    pub fn can_be_floor(&self) -> bool {
+        match *self {
+            Surface::Wall | Surface::Road | Surface::Door | Surface::None => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
