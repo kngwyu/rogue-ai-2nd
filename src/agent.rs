@@ -233,6 +233,7 @@ impl Ord for ActionVal {
     }
 }
 
+// これどうやって決めればいいのか全くわからん...
 impl ActionVal {
     fn from_gold(i: i32) -> ActionVal {
         ActionVal(f64::from(i))
@@ -266,6 +267,9 @@ impl ActionVal {
             Item::Amulet => 100.0,
             Item::None => 0.0,
         })
+    }
+    pub fn explore(turn: i32, val: ActionVal) {
+        let base = (COLUMNS * LINES) as f64;
     }
     fn death() -> ActionVal {
         -ActionVal(1000.0)

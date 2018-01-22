@@ -302,6 +302,7 @@ impl Dangeon {
             let mut adj = None;
             for &d in Direc::vars().take(4) {
                 let nxt_cd = cd + d.to_cd();
+                *or_empty_vec!(used.get_mut(nxt_cd)) = true;
                 if let Some(nxt_cell_ref) = self.get(nxt_cd) {
                     if nxt_cell_ref.surface == Surface::Road {
                         if let Some(_) = adj {
@@ -382,7 +383,6 @@ impl Dangeon {
     //  -   -   -
     //  6 | 7 | 8
     pub fn explore(&self, player_cd: Coord) -> Option<Coord> {
-        // とりあえずこの中ではINF_DISTを基準に評価値を算出して、後で適当に調節する
         let action_base = ActionVal(f64::from(INF_DIST));
         let dist = self.make_dist_map(player_cd)?;
 
