@@ -23,6 +23,7 @@ extern crate sloggers;
 mod data;
 mod parse;
 mod consts;
+#[macro_use]
 mod agent;
 mod dangeon;
 mod damage;

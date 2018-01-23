@@ -233,11 +233,11 @@ impl Ord for ActionVal {
     }
 }
 
-// これどうやって決めればいいのか全くわからん...
 impl ActionVal {
     fn from_gold(i: i32) -> ActionVal {
         ActionVal(f64::from(i))
     }
+    // TODO: HP補正
     fn from_my_dam(d: DamageVal) -> ActionVal {
         -ActionVal(*d * 40.0)
     }
@@ -268,8 +268,47 @@ impl ActionVal {
             Item::None => 0.0,
         })
     }
-    pub fn explore(turn: i32, val: ActionVal) {
-        let base = (COLUMNS * LINES) as f64;
+    pub fn not_visited(around_none: u8) -> ActionVal {
+        ActionVal(f64::from(around_none) + 5.0)
+    }
+    // Exploreに対する評価値
+    pub fn explore(nr_areas: u8) -> ActionVal {
+        let val = match nr_areas {
+            1 => 3.0,
+            2 => 10.0,
+            _ => 1.0,
+        };
+        ActionVal(val)
+    }
+    // ActionValに対し探索成功確率で補正をかける
+    pub fn comp_suc_rate(self, rate: f64) -> ActionVal {
+        const PARTIRION_RATE: f64 = 0.3;
+        let val = *self * PARTIRION_RATE + *self * (1.0 - PARTIRION_RATE) * rate;
+        ActionVal(val)
+    }
+    // ActionValueに対し移動距離で補正をかける
+    pub fn comp_dist(self, steps: i32) -> ActionVal {
+        const BASE: f64 = 100f64;
+        let div = BASE.log(2.0);
+        let min_val = ActionVal(1.0);
+        let comp = if steps >= 99 {
+            min_val
+        } else {
+            let tmp = ActionVal((BASE - f64::from(steps)).log(2.0));
+            cmp::max(tmp, min_val)
+        };
+        self * comp / ActionVal(div)
+    }
+    // TODO: Magic Numberを使わないで書く
+    fn stair(exp_rate: f64) -> ActionVal {
+        let comp = 1.0 - exp_rate.log(2.0) / (-5.0);
+        ActionVal(10.0 * comp)
+    }
+    fn recover(enough_hp: bool) -> ActionVal {
+        if enough_hp {
+            return ActionVal::default();
+        }
+        ActionVal(100.0)
     }
     fn death() -> ActionVal {
         -ActionVal(1000.0)
@@ -312,6 +351,7 @@ impl PlayInfo {
         self.dest = None;
         self.priority = ActionVal::default();
     }
+    // 自分の座標以外は行動決定時に更新する
     fn update(&self, tact: Tactics, act: Action, dest: Option<Coord>, val: ActionVal) -> PlayInfo {
         let mut res = self.clone();
         res.tact = tact;
@@ -412,40 +452,46 @@ impl FeudalAgent {
     }
     // 食糧・敵への対処など優先度の高い処理
     // prevは現在のTacticsの優先度
-    fn interupput(&self) -> Option<(PlayInfo)> {
+    fn interupput(&self) -> Option<PlayInfo> {
         let hung = self.player_stat.hungry_level;
-        let eat = ActionVal::from_hung(hung);
-        let (fight, fight_act) = enemy_search::exec(self).unwrap_or_default();
+        let eat_val = ActionVal::from_hung(hung);
+        let (fight_val, fight_act) = enemy_search::exec(self).unwrap_or_default();
         let prev = self.play_info.priority;
-        let max_act = comp_action!(prev, eat, fight);
+        let max_act = comp_action!(prev, eat_val, fight_val);
         match max_act {
             0 => None,
             1 => Some(self.play_info.update(
                 Tactics::None,
                 Action::EatFood(self.item_list.any_food()?),
                 None,
-                eat,
+                eat_val,
             )),
             _ => Some(
                 self.play_info
-                    .update(Tactics::Fight, fight_act, None, fight),
+                    .update(Tactics::Fight, fight_act, None, fight_val),
             ),
         }
     }
-    fn move_to_dest_sub(&self) -> Option<Direc> {
-        let dist = self.dangeon.make_dist_map(self.play_info.dest?)?;
+    fn move_to_dest_sub(&self, dest: Coord) -> Option<Direc> {
+        let dist = self.dangeon.make_dist_map(dest)?;
         let cd = self.play_info.cd;
         let cur_dist = *dist.get(cd)?;
+        let mut max_diff = 0;
+        let mut ret = None;
         for &d in Direc::vars().take(8) {
             let nxt = cd + d.to_cd();
-            if self.dangeon.can_move(cd, d) == Some(true) && *dist.get(nxt)? < cur_dist {
-                return Some(d);
+            if self.dangeon.can_move(cd, d) == Some(true) {
+                let dist_diff = cur_dist - *dist.get(nxt)?;
+                if dist_diff > max_diff {
+                    max_diff = dist_diff;
+                    ret = Some(d);
+                }
             }
         }
-        None
+        ret
     }
     fn move_to_dest(&self) -> Option<PlayInfo> {
-        let d = self.move_to_dest_sub()?;
+        let d = self.move_to_dest_sub(self.play_info.dest?)?;
         let mut res = self.play_info.clone();
         res.act = Action::Move(d);
         res.cd += d.to_cd();
@@ -454,19 +500,82 @@ impl FeudalAgent {
     fn rethink(&mut self) -> Option<PlayInfo> {
         // 敵→もう書いた
         // Explore, PickItem, Recover, Tostair が必要
-        let enemy_or_eat = self.interupput();
-        let recov = ActionVal(if self.player_stat.have_enough_hp() {
-            0.0
-        } else {
-            200.0
-        });
-        let (item, item_cd) = self.dangeon
+        let enemy_or_eat = self.interupput().unwrap_or_default();
+        let recover_val = ActionVal::recover(self.player_stat.have_enough_hp());
+
+        let (item_cd, item_val) = self.dangeon
             .find_nearest_item(self.play_info.cd)
             .unwrap_or_default();
-        None
+        let cur_cd = self.play_info.cd;
+        let (explore_cd, explore_val) = self.dangeon.explore(cur_cd).unwrap_or_default();
+        let (stair_cd, stair_val) = if let Some(stair_cd) = self.dangeon.find_stair() {
+            let exp_rate = self.dangeon.explore_rate();
+            (stair_cd, ActionVal::stair(*exp_rate))
+        } else {
+            (Coord::default(), ActionVal::default())
+        };
+
+        let max_act = comp_action!(
+            enemy_or_eat.priority,
+            recover_val,
+            item_val,
+            explore_val,
+            stair_val
+        );
+        trace!(
+            LOGGER,
+            "enem: {:?}, recv: {:?}, item: {:?}, explore: {:?}, stair: {:?}",
+            enemy_or_eat.priority,
+            recover_val,
+            item_val,
+            explore_val,
+            stair_val
+        );
+        let ret = match max_act {
+            0 => Some(enemy_or_eat),
+            1 => {
+                let dir = self.dangeon.recover(cur_cd).unwrap_or_default();
+                Some(
+                    self.play_info
+                        .update(Tactics::Recover, Action::Move(dir), None, recover_val),
+                )
+            }
+            2 => {
+                let dir = self.move_to_dest_sub(item_cd).unwrap_or_default();
+                Some(self.play_info.update(
+                    Tactics::PickItem,
+                    Action::Move(dir),
+                    Some(item_cd),
+                    item_val,
+                ))
+            }
+            3 => {
+                let dir = self.move_to_dest_sub(explore_cd).unwrap_or_default();
+                Some(self.play_info.update(
+                    Tactics::Explore,
+                    Action::Move(dir),
+                    Some(explore_cd),
+                    explore_val,
+                ))
+            }
+            4 => {
+                let dir = self.move_to_dest_sub(stair_cd).unwrap_or_default();
+                let act = if dir == Direc::Stay {
+                    Action::DownStair
+                } else {
+                    Action::Move(dir)
+                };
+                Some(
+                    self.play_info
+                        .update(Tactics::ToStair, act, Some(stair_cd), stair_val),
+                )
+            }
+            _ => None,
+        };
+        ret
     }
     fn action_sub(&mut self, dangeon_msg: DangeonMsg) -> Option<Vec<u8>> {
-        let action = match self.play_info.tact {
+        let nxt_playinfo = match self.play_info.tact {
             Tactics::Explore => {
                 // 割込み処理 終了判定は？
                 if self.is_dest() {
@@ -521,12 +630,23 @@ impl FeudalAgent {
                 if inter.is_some() {
                     inter
                 } else {
-                    self.move_to_dest()
+                    if let Some(mut play_info) = self.move_to_dest() {
+                        if play_info.act == Action::Move(Direc::Stay) {
+                            play_info.act = Action::DownStair;
+                            Some(play_info)
+                        } else {
+                            Some(play_info)
+                        }
+                    } else {
+                        None
+                    }
                 }
             }
             Tactics::None => self.rethink(),
         };
-        None
+        trace!(LOGGER, "action_sub: {:?}", nxt_playinfo);
+        self.play_info = nxt_playinfo?;
+        Some(self.play_info.act.into())
     }
 }
 
@@ -594,18 +714,21 @@ impl Reactor for FeudalAgent {
                     _ => {}
                 }
                 let stat_diff = {
-                    let stat_str = str::from_utf8(&map[LINES - 1]).unwrap();
+                    let stat_str = str::from_utf8(&map[LINES + 1]).unwrap();
                     match self.stat_parser.parse(stat_str) {
                         Some(s) => self.player_stat.merge(s),
-                        None => return None, // これは死んでるからreturnしていい
+                        None => {
+                            debug!(LOGGER, ">_<");
+                            return None; // これは死んでるからreturnしていい
+                        }
                     }
                 };
+                debug!(LOGGER, "status: {:?}", self.player_stat);
                 // 必ずmergeする前に呼ぶ
                 if stat_diff.stage_level > 0 {
                     self.next_stage();
                 }
                 let dangeon_msg = self.dangeon.merge(&map[1..(LINES + 1)]);
-                trace!(LOGGER, "dangeon_msg: {:?}", dangeon_msg);
                 if dangeon_msg == DangeonMsg::None {
                     return Some(Action::Die.into());
                 }
@@ -614,6 +737,7 @@ impl Reactor for FeudalAgent {
                 }
                 self.enemy_list.merge(&self.dangeon);
                 if ret_early != None {
+                    debug!(LOGGER, "ret_early: {:?}", ret_early);
                     return ret_early;
                 }
                 self.action_sub(dangeon_msg)

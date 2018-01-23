@@ -44,6 +44,12 @@ enum_with_iter!(Direc {
     Stay,
 });
 
+impl Default for Direc {
+    fn default() -> Self {
+        Direc::Stay
+    }
+}
+
 impl Into<u8> for Direc {
     fn into(self) -> u8 {
         match self {
@@ -105,7 +111,7 @@ impl Direc {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Action {
     Move(Direc),
     Fight(Direc),
@@ -217,7 +223,7 @@ impl PlayerStatus {
         res
     }
     pub fn have_enough_hp(&self) -> bool {
-        let threshold = cmp::max(10, self.max_hp / 2 + 1);
+        let threshold = cmp::max(8, self.max_hp / 2 + 1);
         self.cur_hp >= threshold
     }
 }
@@ -867,7 +873,7 @@ impl Surface {
     }
     pub fn can_be_floor(&self) -> bool {
         match *self {
-            Surface::Wall | Surface::Road | Surface::Door | Surface::None => true,
+            Surface::Floor | Surface::Trap | Surface::Stair => true,
             _ => false,
         }
     }
@@ -896,6 +902,15 @@ impl From<u8> for FieldObject {
                     FieldObject::Item(item)
                 }
             }
+        }
+    }
+}
+
+impl FieldObject {
+    pub fn is_item(&self) -> bool {
+        match *self {
+            FieldObject::Item(_) => true,
+            _ => false,
         }
     }
 }

@@ -62,14 +62,15 @@ impl Cell {
         self.hist.attr.insert(ExplAttr::VISITED);
     }
 
-    pub fn search_suc_rate(&self) -> ActionVal {
+    // 隠し通路があった場合に「それが見つかっていない」確率
+    pub fn search_suc_rate(&self) -> f64 {
         let searched_i = self.hist.searched as i32;
         let val = if self.surface == Surface::Road {
             (1.0 - FIND_RATE_ROAD).powi(searched_i)
         } else {
             (1.0 - FIND_RATE_DOOR).powi(searched_i)
         };
-        ActionVal(val)
+        val
     }
 
     pub fn go(&mut self, d: Direc) {
@@ -228,6 +229,9 @@ impl Dangeon {
     }
 
     pub fn can_move(&self, cd: Coord, d: Direc) -> Option<bool> {
+        if d == Direc::Stay {
+            return Some(true);
+        }
         let cur_sur = self.get(cd)?.surface;
         let nxt_sur = self.get(cd + d.to_cd())?.surface;
         if cur_sur.need_guess() {
@@ -256,6 +260,27 @@ impl Dangeon {
             }
         }
         Some(dist)
+    }
+
+    pub fn recover(&self, cd: Coord) -> Option<Direc> {
+        for &d in Direc::vars() {
+            if self.can_move(cd, d) == Some(true) {
+                return Some(d);
+            }
+        }
+        None
+    }
+
+    pub fn count_around_none(&self, cd: Coord) -> u8 {
+        Direc::vars().fold(0, |acc, d| {
+            let nxt_cd = cd + d.to_cd();
+            if let Some(cell) = self.get(nxt_cd) {
+                if cell.surface == Surface::None {
+                    return acc + 1;
+                }
+            }
+            acc
+        })
     }
 
     // explore
@@ -322,12 +347,18 @@ impl Dangeon {
 
     fn find_not_visited(&self) -> Vec<Coord> {
         self.iter()
-            .filter_map(|(cell, cd)| if cell.is_visited() { Some(cd) } else { None })
+            .filter_map(|(cell, cd)| {
+                if !cell.is_visited() && cell.surface != Surface::None {
+                    Some(cd)
+                } else {
+                    None
+                }
+            })
             .collect()
     }
 
     // 各壁について最も探索回数の少ないマスを適当に集めて返す
-    fn find_walls(&self, start: Coord) -> Vec<(Coord, u32)> {
+    fn find_walls(&self, start: Coord) -> Vec<(Coord, Direc)> {
         let mut res = Vec::new();
         let mut used = SimpleMap::new(false);
         *or_empty_vec!(used.get_mut(start)) = true;
@@ -370,7 +401,7 @@ impl Dangeon {
                                 }
                             }
                         }
-                        res.push(min_vis);
+                        res.push((min_vis.0, d));
                     }
                 }
             }
@@ -382,16 +413,15 @@ impl Dangeon {
     //  3 | 4 | 5
     //  -   -   -
     //  6 | 7 | 8
-    pub fn explore(&self, player_cd: Coord) -> Option<Coord> {
-        let action_base = ActionVal(f64::from(INF_DIST));
+    pub fn explore(&self, player_cd: Coord) -> Option<(Coord, ActionVal)> {
         let dist = self.make_dist_map(player_cd)?;
 
-        // calc non visited
+        // calc not visited
         let not_visited = self.find_not_visited();
         let mut non_visited_val = ActionVal::default();
-        let non_visited_cd = not_visited.iter().max_by_key(|cd| {
-            let dis = *dist.get(**cd).unwrap_or(&INF_DIST);
-            let val = action_base / ActionVal(f64::from(dis));
+        let non_visited_cd = not_visited.iter().max_by_key(|&&cd| {
+            let dis = *dist.get(cd).unwrap_or(&INF_DIST);
+            let val = ActionVal::not_visited(self.count_around_none(cd)).comp_dist(dis);
             non_visited_val = cmp::max(non_visited_val, val);
             val
         });
@@ -401,7 +431,7 @@ impl Dangeon {
             let block = cd.block();
             has_room[*block as usize] = cell.surface == Surface::Floor;
         });
-        let calc_nonroom_area = |cd: Coord, dir: Direc| -> f64 {
+        let calc_nonroom_area = |cd: Coord, dir: Direc| -> u8 {
             let mut block = cd.block();
             let mut cnt = 0;
             while let Some(nxt_blk) = block.iterate(dir) {
@@ -410,41 +440,73 @@ impl Dangeon {
                 }
                 block = nxt_blk;
             }
-            match cnt {
-                1 => 0.6,
-                2 => 1.0,
-                _ => 0.1,
-            }
+            cnt
         };
 
         // calc dead end
         let dead_end = self.find_dead_end(player_cd);
         let mut dead_end_val = ActionVal::default();
+
         let dead_end_cd = dead_end.iter().max_by_key(|cd_and_dir| {
-            let nonroom_point = calc_nonroom_area(cd_and_dir.0, cd_and_dir.1);
+            let nr_areas = calc_nonroom_area(cd_and_dir.0, cd_and_dir.1);
             let dis = *dist.get(cd_and_dir.0).unwrap_or(&INF_DIST);
-            let val = ActionVal(nonroom_point) * action_base / ActionVal(f64::from(dis));
+            let val = ActionVal::explore(nr_areas).comp_dist(dis);
             // 探索回数によるペナルティ
             let pena = if let Some(cell) = self.get(cd_and_dir.0) {
                 cell.search_suc_rate()
             } else {
-                ActionVal(1.0)
+                1.0
             };
-            let val = val * ActionVal(0.4) + val * ActionVal(0.6) * pena;
+            let val = val.comp_suc_rate(pena);
             dead_end_val = cmp::max(dead_end_val, val);
             val
         });
 
         // calc suspicious wall
-        let suspicious_wall = {
-            if non_visited_cd.is_some() {
-                None
-            } else {
-                let walls = self.find_walls(player_cd);
-                Some(walls[0])
-            }
+        let mut wall_val = ActionVal::default();
+        let walls = if non_visited_cd.is_some() {
+            Vec::new()
+        } else {
+            self.find_walls(player_cd)
         };
-        None
+        let wall_cd = walls.iter().max_by_key(|cd_and_dir| {
+            let nr_areas = calc_nonroom_area(cd_and_dir.0, cd_and_dir.1);
+            let dis = *dist.get(cd_and_dir.0).unwrap_or(&INF_DIST);
+            let val = ActionVal::explore(nr_areas).comp_dist(dis);
+            // 探索回数によるペナルティ
+            let pena = if let Some(cell) = self.get(cd_and_dir.0) {
+                cell.search_suc_rate()
+            } else {
+                1.0
+            };
+            let val = val.comp_suc_rate(pena);
+            wall_val = cmp::max(wall_val, val);
+            val
+        });
+
+        let max_act = comp_action!(non_visited_val, dead_end_val, wall_val);
+        trace!(
+            LOGGER,
+            "non visited: {:?}, dead_end: {:?}, wall: {:?}",
+            non_visited_val,
+            dead_end_val,
+            wall_val
+        );
+        match max_act {
+            0 => {
+                let cd = non_visited_cd?;
+                Some((*cd, non_visited_val))
+            }
+            1 => {
+                let cd = dead_end_cd?.0;
+                Some((cd, dead_end_val))
+            }
+            2 => {
+                let cd = wall_cd?.0;
+                Some((cd, wall_val))
+            }
+            _ => None,
+        }
     }
 
     pub fn find_stair(&self) -> Option<Coord> {
@@ -453,23 +515,17 @@ impl Dangeon {
         Some(cd.1)
     }
 
-    pub fn find_nearest_item(&self, cd: Coord) -> Option<(ActionVal, Coord)> {
+    pub fn find_nearest_item(&self, cd: Coord) -> Option<(Coord, ActionVal)> {
         let dist = self.make_dist_map(cd)?;
         let (cell, cd) = self.iter()
-            .filter(|cell_cd| {
-                if let FieldObject::Item(_) = cell_cd.0.obj {
-                    true
-                } else {
-                    false
-                }
-            })
+            .filter(|cell_cd| cell_cd.0.obj.is_item())
             .min_by_key(|cell_cd| *dist.get(cell_cd.1).unwrap_or(&0))?;
         let act_val = if let FieldObject::Item(item) = cell.obj {
             ActionVal::from_item(item)
         } else {
             ActionVal::default()
         };
-        Some((act_val, cd))
+        Some((cd, act_val))
     }
 }
 
@@ -786,7 +842,7 @@ mod test {
         let cur = d.player_cd().unwrap();
         assert_eq!(cur, Coord::new(8, 9));
         let item = d.find_nearest_item(cur).unwrap();
-        assert_approx_eq!(*item.0, 10.0);
+        assert_approx_eq!(*item.1, 10.0);
         let stair = d.find_stair().unwrap();
         let dist = d.make_dist_map(cur).unwrap();
         assert_eq!(d.can_move(stair, Direc::RightUp), Some(true));
