@@ -488,6 +488,7 @@ impl FeudalAgent {
                 }
             }
         }
+        trace!(LOGGER, "move_to_dest_sub {:?}", ret);
         ret
     }
     fn move_to_dest(&self) -> Option<PlayInfo> {
@@ -524,12 +525,15 @@ impl FeudalAgent {
         );
         trace!(
             LOGGER,
-            "enem: {:?}, recv: {:?}, item: {:?}, explore: {:?}, stair: {:?}",
+            "rethink\n enem: {:?} \n recv: {:?}\n item: {:?} {:?}\n explore: {:?} {:?}\n stair: {:?} {:?}",
             enemy_or_eat.priority,
             recover_val,
             item_val,
+            item_cd,
             explore_val,
-            stair_val
+            explore_cd,
+            stair_val,
+            stair_cd,
         );
         let ret = match max_act {
             0 => Some(enemy_or_eat),
@@ -575,6 +579,7 @@ impl FeudalAgent {
         ret
     }
     fn action_sub(&mut self, dangeon_msg: DangeonMsg) -> Option<Vec<u8>> {
+        trace!(LOGGER, "action_sub: {:?}", self.play_info);
         let nxt_playinfo = match self.play_info.tact {
             Tactics::Explore => {
                 // 割込み処理 終了判定は？
@@ -723,17 +728,17 @@ impl Reactor for FeudalAgent {
                         }
                     }
                 };
-                debug!(LOGGER, "status: {:?}", self.player_stat);
                 // 必ずmergeする前に呼ぶ
                 if stat_diff.stage_level > 0 {
                     self.next_stage();
                 }
                 let dangeon_msg = self.dangeon.merge(&map[1..(LINES + 1)]);
-                if dangeon_msg == DangeonMsg::None {
+                if dangeon_msg == DangeonMsg::Die {
                     return Some(Action::Die.into());
                 }
                 if let Some(cd) = self.dangeon.player_cd() {
                     self.play_info.cd = cd;
+                    self.dangeon.visit(cd);
                 }
                 self.enemy_list.merge(&self.dangeon);
                 if ret_early != None {
@@ -935,7 +940,8 @@ mod enemy_search {
         let _thread_num = num_cpus::get();
         let mut ma = 0;
         let mut worst = ActionVal::default();
-        for _ in 0..SEARCH_DEPTH_MAX {
+        for turn in 0..SEARCH_DEPTH_MAX {
+            debug!(LOGGER, "Search Depth: {}", turn);
             state_list.sort_unstable();
             let mut next_states = Vec::new();
             ma = cmp::max(ma, state_list.len());

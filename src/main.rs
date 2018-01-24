@@ -31,7 +31,7 @@ mod damage;
 use consts::*;
 use data::*;
 use agent::FeudalAgent as Agent;
-use cgw::{GameSetting, LogType, OpenMode};
+use cgw::{GameSetting, Severity};
 use std::time::Duration;
 use std::error::Error;
 fn main() {
@@ -44,17 +44,14 @@ fn main() {
             .env("ROGUEUSER", "2ndAI")
             .lines(LINES + 2)
             .columns(COLUMNS)
-            .debug_type(LogType::File((
-                "debug_cgw.txt".to_owned(),
-                *LEVEL,
-                OpenMode::Truncate,
-            )))
+            .debug_file("debug_cgw.txt")
+            .debug_level(Severity::Debug)
             .max_loop(100);
         if MATCHES.is_present("VIS") {
             gs = gs.draw_on(Duration::from_millis(150));
         }
-        let game = gs.build();
         let mut ai = Agent::new();
+        let game = gs.build();
         game.play(&mut ai);
     }
 }

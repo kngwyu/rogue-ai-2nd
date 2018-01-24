@@ -141,6 +141,12 @@ impl Dangeon {
         self.empty
     }
 
+    pub fn visit(&mut self, cd: Coord) {
+        if let Some(cell) = self.get_mut(cd) {
+            cell.visit();
+        }
+    }
+
     pub fn merge(&mut self, orig: &[Vec<u8>]) -> DangeonMsg {
         let mut res = DangeonMsg::default();
         for (cell_mut, cd) in self.iter_mut() {
@@ -192,14 +198,21 @@ impl Dangeon {
 
     // check need_guess before call this fn
     fn guess_floor(&self, cd: Coord) -> Option<Surface> {
-        for d in &[Direc::Up, Direc::Right, Direc::RightUp, Direc::RightDown] {
-            let s1 = self.get(cd + d.to_cd())?.surface;
-            let s2 = self.get(cd + d.rotate_n(4).to_cd())?.surface;
-            if s1 == s2 {
-                return Some(s1);
+        let (mut cnt_f, mut cnt_r) = (0, 0);
+        for d in Direc::vars().take(8) {
+            let s = self.get(cd + d.to_cd())?.surface;
+            match s {
+                Surface::Road => cnt_r += 1,
+                Surface::Floor => cnt_f += 1,
+                _ => {}
             }
         }
-        None
+        // 雑すぎかも？
+        if cnt_f >= cnt_r {
+            Some(Surface::Floor)
+        } else {
+            Some(Surface::Road)
+        }
     }
 
     fn can_move_sub(cur: Surface, nxt: Surface, d: Direc) -> Option<bool> {
