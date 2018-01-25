@@ -28,12 +28,12 @@ mod agent;
 mod dangeon;
 mod damage;
 
-use consts::*;
-use data::*;
 use agent::FeudalAgent as Agent;
 use cgw::{GameSetting, Severity};
-use std::time::Duration;
+use consts::*;
+use data::*;
 use std::error::Error;
+use std::time::Duration;
 fn main() {
     let iter = match MATCHES.value_of("ITER").unwrap_or("1").parse::<usize>() {
         Ok(i) => i,

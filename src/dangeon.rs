@@ -1,12 +1,12 @@
-use std::ops::{Add, AddAssign, Sub, SubAssign};
-use std::fmt::Debug;
+use agent::ActionVal;
+use consts::*;
+use damage::ProbVal;
+use data::*;
 use std::cmp::{self, Ordering};
 use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::mem;
-use consts::*;
-use data::*;
-use agent::ActionVal;
-use damage::ProbVal;
+use std::ops::{Add, AddAssign, Sub, SubAssign};
 bitflags! {
     pub struct ExplAttr: u16 {
         const NONE = 0;
@@ -99,6 +99,9 @@ impl Cell {
     pub fn surface(&self) -> Surface {
         self.surface
     }
+    pub fn need_guess(&self) -> bool {
+        self.surface.need_guess() && self.obj != FieldObject::None
+    }
 }
 
 pub trait CoordGet {
@@ -149,6 +152,7 @@ impl Dangeon {
 
     pub fn merge(&mut self, orig: &[Vec<u8>]) -> DangeonMsg {
         let mut res = DangeonMsg::default();
+        let mut new_floor = None;
         for (cell_mut, cd) in self.iter_mut() {
             let c = orig[cd.y as usize][cd.x as usize];
             if c == b'\\' {
@@ -160,10 +164,14 @@ impl Dangeon {
                 cell_mut.surface = cur_surface;
                 if cur_surface != Surface::None {
                     res = DangeonMsg::FindNew;
+                    new_floor = Some(cd);
                 }
             }
         }
         self.empty = false;
+        if let Some(floor_cd) = new_floor {
+            self.extend_floor(floor_cd);
+        }
         res
     }
 
@@ -188,6 +196,22 @@ impl Dangeon {
         }
     }
 
+    pub fn rect_iter(&self, rect: Rect) -> RectIter<Dangeon> {
+        RectIter {
+            content: self,
+            cd: rect.l,
+            rect: rect,
+        }
+    }
+
+    pub fn rect_iter_mut(&mut self, rect: Rect) -> RectIterMut<Dangeon> {
+        RectIterMut {
+            content: self,
+            cd: rect.l,
+            rect: rect,
+        }
+    }
+
     pub fn player_cd(&self) -> Option<Coord> {
         Some(
             self.iter()
@@ -196,15 +220,51 @@ impl Dangeon {
         )
     }
 
+    pub fn extend_floor(&mut self, start: Coord) {
+        if let Some(rect) = self.extend_floor_sub(start) {
+            for (cell, _cd) in self.rect_iter_mut(rect) {
+                cell.surface = Surface::Floor;
+            }
+        }
+    }
+
+    pub fn extend_floor_sub(&self, start: Coord) -> Option<Rect> {
+        let mut rect = Rect::default();
+        for &d in Direc::vars().take(4) {
+            let mut bound = None;
+            for cd in start.direc_iter(d).unwrap() {
+                let cell = self.get(cd)?;
+                match cell.surface {
+                    Surface::Wall | Surface::Door => {
+                        bound = Some(cd);
+                        break;
+                    }
+                    Surface::Road => break,
+                    _ => {}
+                }
+            }
+            let b = bound?;
+            match d {
+                Direc::Up => rect.l.y = b.y + 1,
+                Direc::Right => rect.r.x = b.x - 1,
+                Direc::Down => rect.r.y = b.y - 1,
+                Direc::Left => rect.l.x = b.x + 1,
+                _ => {}
+            }
+        }
+        Some(Rect::new(rect.l, rect.r)?)
+    }
+
     // check need_guess before call this fn
     fn guess_floor(&self, cd: Coord) -> Option<Surface> {
         let (mut cnt_f, mut cnt_r) = (0, 0);
         for d in Direc::vars().take(8) {
-            let s = self.get(cd + d.to_cd())?.surface;
-            match s {
-                Surface::Road => cnt_r += 1,
-                Surface::Floor => cnt_f += 1,
-                _ => {}
+            if let Some(cell) = self.get(cd + d.to_cd()) {
+                match cell.surface {
+                    Surface::Road => cnt_r += 1,
+                    Surface::Floor => cnt_f += 1,
+                    _ => {}
+                }
             }
         }
         // 雑すぎかも？
@@ -245,13 +305,19 @@ impl Dangeon {
         if d == Direc::Stay {
             return Some(true);
         }
-        let cur_sur = self.get(cd)?.surface;
-        let nxt_sur = self.get(cd + d.to_cd())?.surface;
-        if cur_sur.need_guess() {
-            Dangeon::can_move_sub(self.guess_floor(cd)?, nxt_sur, d)
+        let cur_cell = self.get(cd)?;
+        let nxt_cell = self.get(cd + d.to_cd())?;
+        let cur_sur = if cur_cell.need_guess() {
+            self.guess_floor(cd)?
         } else {
-            Dangeon::can_move_sub(cur_sur, nxt_sur, d)
-        }
+            cur_cell.surface
+        };
+        let nxt_sur = if nxt_cell.need_guess() {
+            self.guess_floor(cd + d.to_cd())?
+        } else {
+            nxt_cell.surface
+        };
+        Dangeon::can_move_sub(cur_sur, nxt_sur, d)
     }
 
     pub fn make_dist_map(&self, start: Coord) -> Option<SimpleMap<i32>> {
@@ -404,7 +470,7 @@ impl Dangeon {
                         };
                         let mut min_vis = (cd, cur_cell.hist.searched);
                         for &wall_d in &move_dir {
-                            for wall_cd in cd.direc_iter(wall_d) {
+                            for wall_cd in cd.direc_iter(wall_d).expect("Error in find walls") {
                                 let wall_cell = or_empty_vec!(self.get(wall_cd));
                                 if !wall_cell.surface.can_be_floor() {
                                     break;
@@ -686,10 +752,15 @@ impl Coord {
             y: y.into(),
         }
     }
-    pub fn direc_iter(&self, d: Direc) -> DirecIterator {
-        DirecIterator {
-            cur: *self,
-            direc: d.to_cd(),
+    pub fn direc_iter(&self, d: Direc) -> Option<DirecIterator> {
+        // 無限ループの原因になる
+        if d == Direc::Stay {
+            None
+        } else {
+            Some(DirecIterator {
+                cur: *self,
+                direc: d.to_cd(),
+            })
         }
     }
     fn range_ok(&self) -> bool {
@@ -821,6 +892,85 @@ impl Iterator for DirecIterator {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Rect {
+    l: Coord,
+    r: Coord,
+}
+
+impl Rect {
+    fn new(l: Coord, r: Coord) -> Option<Rect> {
+        let ok = l.x <= r.x && l.y <= r.y;
+        if !ok {
+            None
+        } else {
+            Some(Rect { l: l, r: r })
+        }
+    }
+    fn range_ok(&self, cd: Coord) -> bool {
+        self.l.x <= cd.x && cd.x <= self.r.y && self.l.y <= cd.y && cd.y <= self.r.y
+    }
+}
+
+pub struct RectIter<'a, T>
+where
+    T: CoordGet + 'a,
+{
+    content: &'a T,
+    cd: Coord,
+    rect: Rect,
+}
+
+impl<'a, T> Iterator for RectIter<'a, T>
+where
+    T: CoordGet + 'a,
+{
+    type Item = (&'a T::Item, Coord);
+    fn next(&mut self) -> Option<(&'a T::Item, Coord)> {
+        let before = self.cd;
+        self.cd.x += 1;
+        if self.cd.x > self.rect.r.x {
+            self.cd.x = self.rect.l.x;
+            self.cd.y += 1;
+        }
+        if self.rect.range_ok(before) {
+            Some((self.content.get(before)?, before))
+        } else {
+            None
+        }
+    }
+}
+
+pub struct RectIterMut<'a, T>
+where
+    T: CoordGetMut + 'a,
+{
+    content: &'a mut T,
+    cd: Coord,
+    rect: Rect,
+}
+
+impl<'a, T> Iterator for RectIterMut<'a, T>
+where
+    T: CoordGetMut + 'a,
+{
+    type Item = (&'a mut T::Item, Coord);
+    fn next(&mut self) -> Option<(&'a mut T::Item, Coord)> {
+        let before = self.cd;
+        self.cd.x += 1;
+        if self.cd.x > self.rect.r.x {
+            self.cd.x = self.rect.l.x;
+            self.cd.y += 1;
+        }
+        if self.rect.range_ok(before) {
+            let cell = self.content.get_mut(before)?;
+            unsafe { Some((mem::transmute(cell), before)) }
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -864,6 +1014,26 @@ mod test {
         println!("{:?}", d.explore_rate());
     }
 
+    #[test]
+    fn test_rect_iter() {
+        let d = make_dangeon(&MAP1);
+        let cur = d.player_cd().unwrap();
+        let rect = d.extend_floor_sub(cur).unwrap();
+        assert_eq!(
+            rect,
+            Rect {
+                l: Coord { x: 2, y: 9 },
+                r: Coord { x: 24, y: 12 },
+            }
+        );
+        for (cell, cd) in d.rect_iter(rect) {
+            if cell.surface == Surface::None {
+                assert_eq!(cd, cur);
+            } else {
+                assert_eq!(cell.surface, Surface::Floor);
+            }
+        }
+    }
     use std::io::{BufRead, BufReader};
     use std::str;
     fn make_dangeon(s: &str) -> Dangeon {

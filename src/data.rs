@@ -1,11 +1,11 @@
 // domain knowleadge
 // enemy data is from https://nethackwiki.com/wiki/Rogue_(game), thanks
 
-use std::slice;
-use std::cmp;
-use dangeon::Coord;
 use cgw::AsciiChar;
 use damage::*;
+use dangeon::Coord;
+use std::cmp;
+use std::slice;
 #[macro_export]
 macro_rules! default_none {
     ($enum:ident) => {
@@ -463,7 +463,7 @@ macro_rules! enem_attr {
 #[derive(Debug)]
 struct EnemyStatus {
     treasure: i32,     // gold
-    attr: EnemyAttr, // MEANとか ゲーム内でflag使わないでif文処理してるやつもこれで
+    attr: EnemyAttr, /* MEANとか ゲーム内でflag使わないでif文処理してるやつもこれで */
     exp: i32,        // 得られる経験値
     level: i32,      // レベル (多分hit率およびhp)
     defence: i32,    // アーマー(これも多分hit率だけ)
@@ -862,9 +862,6 @@ impl From<u8> for Surface {
 }
 
 impl Surface {
-    pub fn blank() -> u8 {
-        b' '
-    }
     pub fn need_guess(&self) -> bool {
         match *self {
             Surface::Stair | Surface::Trap | Surface::None => true,
@@ -874,6 +871,12 @@ impl Surface {
     pub fn can_be_floor(&self) -> bool {
         match *self {
             Surface::Floor | Surface::Trap | Surface::Stair => true,
+            _ => false,
+        }
+    }
+    pub fn can_be_floor_permissive(&self) -> bool {
+        match *self {
+            Surface::Floor | Surface::Trap | Surface::Stair | Surface::None => true,
             _ => false,
         }
     }

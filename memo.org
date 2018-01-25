@@ -22,7 +22,13 @@
 - 探索した場合のフィールドの変化
 - 移動できたかどうか
 - 敵に対するダメージ(あまり意味ない？)
-- 
+*** 一連の行動に対する成功判定
+- Fight → 探索するので成功判定なし(問題があるかもしれないが)
+- ToStair, Explore, PickItem → 目的地についたかどうか
+- Recover → HPが回復したかどうか
+*** 一連の行動に対する失敗判定
+- どうしようかねえ...
+- とりあえずrethinkしてごまかす？
 ** その他
 - 戦闘
   - roll_em を呼び出す
@@ -76,3 +82,4 @@ int a_class[MAXARMORS] = {		/* Armor class for each armor type */
 	3,	/* PLATE_MAIL */
 };
 #+END_SRC
+

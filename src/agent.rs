@@ -1,15 +1,15 @@
-use consts::*;
-use data::*;
-use dangeon::*;
-use damage::*;
-use parse::{MsgParse, StatusParse};
 use cgw::{ActionResult, Reactor};
+use consts::*;
+use damage::*;
+use dangeon::*;
+use data::*;
 use num_cpus;
-use std::str;
+use parse::{MsgParse, StatusParse};
 use std::cmp;
 use std::cmp::Ordering;
 use std::slice::Iter as SliceIter;
 use std::slice::IterMut as SliceIterMut;
+use std::str;
 
 #[derive(Clone, Debug)]
 struct EnemyList(Vec<EnemyHist>);
@@ -360,6 +360,12 @@ impl PlayInfo {
         res.priority = val;
         res
     }
+    // actionのみupdateする(recoverなど)
+    fn update_act(&self, act: Action) -> PlayInfo {
+        let mut res = self.clone();
+        res.act = act;
+        res
+    }
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -488,7 +494,7 @@ impl FeudalAgent {
                 }
             }
         }
-        trace!(LOGGER, "move_to_dest_sub {:?}", ret);
+        trace!(LOGGER, "move_to_dest_sub {:?}, {}", ret, max_diff);
         ret
     }
     fn move_to_dest(&self) -> Option<PlayInfo> {
@@ -578,12 +584,15 @@ impl FeudalAgent {
         };
         ret
     }
+    // 成功判定と同時に失敗判定をする
     fn action_sub(&mut self, dangeon_msg: DangeonMsg) -> Option<Vec<u8>> {
         trace!(LOGGER, "action_sub: {:?}", self.play_info);
-        let nxt_playinfo = match self.play_info.tact {
+        let mut rethinked = false;
+        let mut nxt_playinfo = match self.play_info.tact {
             Tactics::Explore => {
-                // 割込み処理 終了判定は？
+                // 割込み処理 終了判定
                 if self.is_dest() {
+                    rethinked = true;
                     self.rethink()
                 } else {
                     let inter = self.interupput();
@@ -595,13 +604,13 @@ impl FeudalAgent {
                 }
             }
             Tactics::Fight => {
-                // 割込み処理のみ
-                let inter = self.interupput();
-                inter
+                rethinked = true;
+                self.rethink()
             }
             Tactics::PickItem => {
                 // 座標の確認 割込みまたはReThink
                 if self.is_dest() {
+                    rethinked = true;
                     self.rethink()
                 } else {
                     let inter = self.interupput();
@@ -615,13 +624,15 @@ impl FeudalAgent {
             Tactics::Recover => {
                 // HPの確認 割込み処理
                 if self.player_stat.have_enough_hp() {
+                    rethinked = true;
                     self.rethink()
                 } else {
                     let inter = self.interupput();
                     if inter.is_some() {
                         inter
                     } else {
-                        self.move_to_dest()
+                        let dir = self.dangeon.recover(self.play_info.cd).unwrap_or_default();
+                        Some(self.play_info.update_act(Action::Move(dir)))
                     }
                 }
             }
@@ -635,20 +646,17 @@ impl FeudalAgent {
                 if inter.is_some() {
                     inter
                 } else {
-                    if let Some(mut play_info) = self.move_to_dest() {
-                        if play_info.act == Action::Move(Direc::Stay) {
-                            play_info.act = Action::DownStair;
-                            Some(play_info)
-                        } else {
-                            Some(play_info)
-                        }
-                    } else {
-                        None
-                    }
+                    self.move_to_dest()
                 }
             }
-            Tactics::None => self.rethink(),
+            Tactics::None => {
+                rethinked = true;
+                self.rethink()
+            }
         };
+        if nxt_playinfo.is_none() && !rethinked {
+            nxt_playinfo = self.rethink();
+        }
         trace!(LOGGER, "action_sub: {:?}", nxt_playinfo);
         self.play_info = nxt_playinfo?;
         Some(self.play_info.act.into())
@@ -676,16 +684,25 @@ impl Reactor for FeudalAgent {
                     GameMsg::Item(item_pack) => if item_pack.typ != Item::Gold {
                         self.item_list.merge(item_pack);
                     },
-                    GameMsg::Defeated(_) => {
+                    GameMsg::Defeated(enemy_name) => {
                         self.msg_flags.defeated = true;
-                        let _removed = match self.play_info.act {
-                            Action::Move(d) | Action::Fight(d) => self.enemy_list.remove(d.to_cd()),
+                        let cur_cd = self.play_info.cd;
+                        let removed = match self.play_info.act {
+                            Action::Move(d) | Action::Fight(d) => {
+                                self.enemy_list.remove(cur_cd + d.to_cd())
+                            }
                             Action::Throw((d, _)) => {
-                                let mut diter = self.play_info.cd.direc_iter(d);
-                                diter.any(|cd| self.enemy_list.remove(cd))
+                                if let Some(mut diter) = self.play_info.cd.direc_iter(d) {
+                                    diter.any(|cd| self.enemy_list.remove(cur_cd + cd))
+                                } else {
+                                    false
+                                }
                             }
                             _ => false,
                         };
+                        if !removed {
+                            warn!(LOGGER, "defeated but not removed enemy: {:?}", enemy_name);
+                        }
                     }
                     GameMsg::Scored(_) => match self.play_info.act {
                         Action::Move(d) | Action::Fight(d) => {
@@ -703,14 +720,16 @@ impl Reactor for FeudalAgent {
                         Action::Throw((d, id)) => {
                             if let Some(w) = self.item_list.get_weapon(id) {
                                 let dam = w.throw().expect_val();
-                                self.play_info.cd.direc_iter(d).any(|cd| {
-                                    if let Some(hist_mut) = self.enemy_list.get_mut(cd) {
-                                        hist_mut.hp_ex -= dam;
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                });
+                                if let Some(mut diter) = self.play_info.cd.direc_iter(d) {
+                                    diter.any(|cd| {
+                                        if let Some(hist_mut) = self.enemy_list.get_mut(cd) {
+                                            hist_mut.hp_ex -= dam;
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    });
+                                }
                             }
                         }
                         _ => {}
@@ -720,12 +739,10 @@ impl Reactor for FeudalAgent {
                 }
                 let stat_diff = {
                     let stat_str = str::from_utf8(&map[LINES + 1]).unwrap();
-                    match self.stat_parser.parse(stat_str) {
-                        Some(s) => self.player_stat.merge(s),
-                        None => {
-                            debug!(LOGGER, ">_<");
-                            return None; // これは死んでるからreturnしていい
-                        }
+                    if let Some(stat) = self.stat_parser.parse(stat_str) {
+                        self.player_stat.merge(stat)
+                    } else {
+                        PlayerStatus::default()
                     }
                 };
                 // 必ずmergeする前に呼ぶ
@@ -840,12 +857,11 @@ mod enemy_search {
                     }
                 }
                 TryAction::Throw((d, throw_weap)) => {
-                    let diter = cur_cd.direc_iter(d);
                     let mut ok = false;
-                    for cd in diter {
+                    for cd in cur_cd.direc_iter(d)? {
                         let cell = agent.dangeon.get(cd)?;
                         match cell.surface() {
-                            Surface::Door | Surface::None => return None,
+                            Surface::Wall | Surface::None => return None,
                             _ => {}
                         }
                         if let Some(enem_ref) = next_state.enemy_list.get_mut(cd) {
@@ -940,8 +956,7 @@ mod enemy_search {
         let _thread_num = num_cpus::get();
         let mut ma = 0;
         let mut worst = ActionVal::default();
-        for turn in 0..SEARCH_DEPTH_MAX {
-            debug!(LOGGER, "Search Depth: {}", turn);
+        for _turn in 0..SEARCH_DEPTH_MAX {
             state_list.sort_unstable();
             let mut next_states = Vec::new();
             ma = cmp::max(ma, state_list.len());
@@ -954,7 +969,7 @@ mod enemy_search {
                     continue;
                 }
                 // just try to move or throw
-                for &d in Direc::vars() {
+                for &d in Direc::vars().take(8) {
                     if let Some(ns) = simulate_act(agent, cur_state, TryAction::Move(d)) {
                         next_states.push(ns);
                     }
@@ -963,7 +978,7 @@ mod enemy_search {
                     if w == Weapon::None {
                         break;
                     }
-                    for &d in Direc::vars() {
+                    for &d in Direc::vars().take(8) {
                         if let Some(mut ns) =
                             simulate_act(agent, cur_state, TryAction::Throw((d, w)))
                         {
@@ -979,8 +994,13 @@ mod enemy_search {
             }
             state_list = next_states;
         }
-        debug!(LOGGER, "max state num: {}", ma);
         let best_state = state_list.iter().max()?;
+        trace!(
+            LOGGER,
+            "best_score: {:?}, worst: {:?}",
+            best_state.val,
+            worst
+        );
         Some((
             best_state.val - worst,
             best_state.actions.get(0)?.to_action(agent)?,
