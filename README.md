@@ -1,5 +1,7 @@
 # rogue-ai-2nd
-It's my rogue AI in early dev stage.
+It's my rogue AI.  
+It's in early development stage and not so strong.  
+I uploaded some plays of this AI in [asciinema](https://asciinema.org/~kngwyu).
 
 # How to run
 

@@ -181,6 +181,14 @@ impl ItemList {
         let id = (id - b'a') as usize;
         Some(&self.0[id])
     }
+    fn get_mut(&mut self, id: u8) -> Option<&mut ItemPack> {
+        if id < b'a' || id > b'z' {
+            warn!(LOGGER, "Unhandled Item Id: {}", id);
+            return None;
+        }
+        let id = (id - b'a') as usize;
+        Some(&mut self.0[id])
+    }
     fn get_weapon(&self, id: u8) -> Option<Weapon> {
         let item = self.get(id)?;
         if let Item::Weapon(w) = item.typ {
@@ -196,6 +204,24 @@ impl ItemList {
             }
         }
         None
+    }
+    fn consume(&mut self, id: u8) {
+        let need_to_warn = if let Some(item) = self.get_mut(id) {
+            if item.num == 0 {
+                true
+            } else {
+                item.num -= 1;
+                false
+            }
+        } else {
+            true
+        };
+        if need_to_warn {
+            warn!(
+                LOGGER,
+                "attempted to use an item which doesn't exist, {}", id as char
+            );
+        }
     }
     fn iter(&self) -> SliceIter<ItemPack> {
         self.0.iter()
@@ -691,6 +717,9 @@ impl FeudalAgent {
         trace!(LOGGER, "action_sub: {:?}", nxt_playinfo);
         self.msg_flags.reset();
         self.play_info = nxt_playinfo?;
+        if let Action::Throw((_, id)) = self.play_info.act {
+            self.item_list.consume(id);
+        }
         Some(self.play_info.act.into())
     }
 
@@ -907,7 +936,7 @@ mod enemy_search {
                     for cd in cur_cd.direc_iter(d)? {
                         let cell = agent.dangeon.get(cd)?;
                         match cell.surface() {
-                            Surface::Wall | Surface::None => return None,
+                            Surface::Wall | Surface::None | Surface::Door => return None,
                             _ => {}
                         }
                         if let Some(enem_ref) = next_state.enemy_list.get_mut(cd) {
