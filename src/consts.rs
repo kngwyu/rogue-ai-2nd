@@ -14,6 +14,7 @@ lazy_static!{
                   (@arg DEBUG_FILE: -D --debug +takes_value "Debug File")
                   (@arg DEBUG_LEVEL: -L --level +takes_value "Debug Level")
                   (@arg MAX_LOOP: -M --maxloop +takes_value "Max Loop number")
+                  (@arg INTERVAL: -I --interval +takes_value "Draw interval")
                   (@arg VIS: -V --vis "Visualize")
         )
         .get_matches();

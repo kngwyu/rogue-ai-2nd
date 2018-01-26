@@ -40,6 +40,11 @@ fn main() {
         .unwrap_or("100")
         .parse::<usize>()
         .expect("usage: --maxloop 1000");
+    let draw_interval = MATCHES
+        .value_of("INTERVAL")
+        .unwrap_or("100")
+        .parse::<u64>()
+        .expect("usage: --interval 100");
     let mut gs = GameSetting::new("rogue")
         .env("ROGUEUSER", "2ndAI")
         .lines(LINES + 2)
@@ -48,7 +53,7 @@ fn main() {
         .debug_level(Severity::Debug)
         .max_loop(max_loop);
     if MATCHES.is_present("VIS") {
-        gs = gs.draw_on(Duration::from_millis(150));
+        gs = gs.draw_on(Duration::from_millis(draw_interval));
     }
     let mut ai = Agent::new();
     let game = gs.build();
