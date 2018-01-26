@@ -117,7 +117,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "curses-game-wrapper"
-version = "0.0.1"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "ascii 0.8.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitflags 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -379,7 +380,7 @@ dependencies = [
  "bitflags 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "clap 2.29.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "clippy 0.0.176 (registry+https://github.com/rust-lang/crates.io-index)",
- "curses-game-wrapper 0.0.1",
+ "curses-game-wrapper 0.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "num_alias 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "num_cpus 1.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -705,6 +706,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum clippy 0.0.176 (registry+https://github.com/rust-lang/crates.io-index)" = "72432eb67ee57b1b3690ae22d1f6584cf5935da13805d143640de5ee3475bee2"
 "checksum clippy_lints 0.0.176 (registry+https://github.com/rust-lang/crates.io-index)" = "41a8d1856b660dae1e2f15ec3a6321f5548eae902b9fc4c8b12596ac9f769162"
 "checksum crossbeam 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)" = "0c5ea215664ca264da8a9d9c3be80d2eaf30923c259d03e870388eb927508f97"
+"checksum curses-game-wrapper 0.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "2f0149ff9a66c9845136ab03d5ed7c47a324dfba8f0689b6925fb25eae639a48"
 "checksum dtoa 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "09c3753c3db574d215cba4ea76018483895d7bff25a31b49ba45db21c48e50ab"
 "checksum either 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "740178ddf48b1a9e878e6d6509a1442a2d42fd2928aae8e7a6f8a36fb01981b3"
 "checksum fuchsia-zircon 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "f6c0581a4e363262e52b87f59ee2afe3415361c6ec35e665924eb08afe8ff159"
