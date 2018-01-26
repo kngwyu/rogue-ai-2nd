@@ -1,5 +1,5 @@
-use regex::{Regex, RegexSet};
 use data::*;
+use regex::{Regex, RegexSet};
 use std::collections::BinaryHeap;
 use std::str;
 pub struct StatusParse {
@@ -102,6 +102,8 @@ impl MsgParse {
                 r"You moved onto",               // 18
                 r"Dropped",                      // 19
                 r"do you want to call",          // 20
+                r"not a valid item",             // 21
+                r"no way down",                  // 22
             ]).unwrap(),
             detect_enemy: Regex::new(r"(?i)the.*?(?P<enemy>\w)").unwrap(),
             detect_item: Regex::new(
@@ -271,6 +273,8 @@ impl MsgParse {
                 18 => res = MovedOnto(self.match_item(s)),
                 19 => res = Dropped,
                 20 => res = CallIt,
+                21 => res = NotValid,
+                22 => res = NoStair,
                 _ => {}
             }
         }
@@ -338,11 +342,108 @@ mod test {
             "What do you want to call it?",
             "There's no room in your pack--More--",
             "You moved onto splint mail",
+            "'w' is not a valid item--More--",
+            "I see no way down",
+        ];
+        let answers = vec![
+            (GameMsg::Injured(Enemy::Emu), false),
+            (GameMsg::Injured(Enemy::Emu), false),
+            (GameMsg::Injured(Enemy::Bat), false),
+            (GameMsg::NotInjured(Enemy::Bat), false),
+            (GameMsg::NotInjured(Enemy::Hobgoblin), false),
+            (GameMsg::Direction, false),
+            (GameMsg::Missed(Enemy::Hobgoblin), true),
+            (GameMsg::Scored(Enemy::Kestrel), true),
+            (GameMsg::Scored(Enemy::Rattlesnake), true),
+            (GameMsg::Defeated(Enemy::Emu), false),
+            (
+                GameMsg::Item(ItemPack {
+                    id: 0,
+                    name: "".to_owned(),
+                    num: 32,
+                    typ: Item::Gold,
+                    val: None,
+                }),
+                false,
+            ),
+            (
+                GameMsg::Item(ItemPack {
+                    id: 103,
+                    name: "yellow".to_owned(),
+                    num: 1,
+                    typ: Item::Potion,
+                    val: None,
+                }),
+                false,
+            ),
+            (
+                GameMsg::Item(ItemPack {
+                    id: 104,
+                    name: "tuenes eepme".to_owned(),
+                    num: 1,
+                    typ: Item::Scroll,
+                    val: None,
+                }),
+                false,
+            ),
+            (
+                GameMsg::Item(ItemPack {
+                    id: 111,
+                    name: "org vly gopsehzok hasnatue".to_owned(),
+                    num: 2,
+                    typ: Item::Scroll,
+                    val: None,
+                }),
+                true,
+            ),
+            (
+                GameMsg::Item(ItemPack {
+                    id: 105,
+                    name: "".to_owned(),
+                    num: 1,
+                    typ: Item::Armor(Armor::Scale),
+                    val: None,
+                }),
+                false,
+            ),
+            (
+                GameMsg::Item(ItemPack {
+                    id: 102,
+                    name: "eye".to_owned(),
+                    num: 1,
+                    typ: Item::Ring,
+                    val: None,
+                }),
+                false,
+            ),
+            (
+                GameMsg::Item(ItemPack {
+                    id: 97,
+                    name: "".to_owned(),
+                    num: 2,
+                    typ: Item::Food(Food::Ration),
+                    val: None,
+                }),
+                true,
+            ),
+            (GameMsg::None, false),
+            (GameMsg::ArmorW, false),
+            (GameMsg::ArmorT, false),
+            (GameMsg::WhichObj, false),
+            (GameMsg::LevelUp(4), true),
+            (GameMsg::None, true),
+            (GameMsg::Ate, false),
+            (GameMsg::None, false),
+            (GameMsg::CallIt, false),
+            (GameMsg::PackFull, true),
+            (GameMsg::MovedOnto(Item::Armor(Armor::Splint)), false),
+            (GameMsg::NotValid, true),
+            (GameMsg::NoStair, false),
         ];
         let parser = MsgParse::new();
-        for s in msgs {
-            println!("{}", s);
-            println!("{:?}", parser.parse(s));
+        for (&msg, ans) in msgs.iter().zip(answers.iter()) {
+            let parsed = parser.parse(msg);
+            assert_eq!(*ans, parsed);
         }
     }
 }

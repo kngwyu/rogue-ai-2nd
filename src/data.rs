@@ -246,6 +246,8 @@ pub enum GameMsg {
     MovedOnto(Item),
     Dropped,
     CallIt,
+    NotValid,
+    NoStair,
     None,
 }
 
@@ -862,21 +864,9 @@ impl From<u8> for Surface {
 }
 
 impl Surface {
-    pub fn need_guess(&self) -> bool {
-        match *self {
-            Surface::Stair | Surface::Trap | Surface::None => true,
-            _ => false,
-        }
-    }
     pub fn can_be_floor(&self) -> bool {
         match *self {
             Surface::Floor | Surface::Trap | Surface::Stair => true,
-            _ => false,
-        }
-    }
-    pub fn can_be_floor_permissive(&self) -> bool {
-        match *self {
-            Surface::Floor | Surface::Trap | Surface::Stair | Surface::None => true,
             _ => false,
         }
     }

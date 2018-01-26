@@ -1,11 +1,33 @@
 // calc damage
 use data::{Enemy, EnemyHist, PlayerStatus, Weapon};
-use std::ops::Deref;
-use std::cmp::{max, min};
 use rand::{thread_rng, Rng};
-
+use std::cmp::{max, min, Ordering};
+use std::ops::Deref;
 float_alias!(DamageVal, f64);
 float_alias!(ProbVal, f64, -0.1 => 1.1);
+
+impl Eq for DamageVal {}
+
+impl Ord for DamageVal {
+    fn cmp(&self, other: &DamageVal) -> Ordering {
+        if self.is_nan() && other.is_nan() {
+            panic!("DamageVal: NAN value is compared!");
+        } else if self.is_nan() {
+            Ordering::Less
+        } else if other.is_nan() {
+            Ordering::Greater
+        } else {
+            self.partial_cmp(other)
+                .expect("DamageVal: NAN value is compared!")
+        }
+    }
+}
+
+impl DamageVal {
+    pub fn half() -> DamageVal {
+        DamageVal(0.5)
+    }
+}
 
 // 攻撃する側のレベル、アーマー(10 - 実際の表示)、補正値
 fn hit_rate_sub(level: i32, armor: i32, correct: i32) -> ProbVal {

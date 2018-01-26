@@ -100,7 +100,11 @@ impl Cell {
         self.surface
     }
     pub fn need_guess(&self) -> bool {
-        self.surface.need_guess() && self.obj != FieldObject::None
+        match self.surface {
+            Surface::Stair | Surface::Trap => true,
+            Surface::None => self.obj != FieldObject::None,
+            _ => false,
+        }
     }
 }
 

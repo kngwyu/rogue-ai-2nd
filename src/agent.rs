@@ -124,10 +124,10 @@ impl EnemyList {
         }
     }
 
-    fn remove(&mut self, cd: Coord) -> bool {
+    fn remove(&mut self, cd: Coord, target: Enemy) -> bool {
         let mut rem_id = None;
         for (i, enem) in self.iter().enumerate() {
-            if enem.cd == cd {
+            if enem.cd == cd && enem.typ == target {
                 rem_id = Some(i);
                 break;
             }
@@ -237,12 +237,13 @@ impl ActionVal {
     fn from_gold(i: i32) -> ActionVal {
         ActionVal(f64::from(i))
     }
-    // TODO: HP補正
-    fn from_my_dam(d: DamageVal) -> ActionVal {
-        -ActionVal(*d * 40.0)
+    fn from_my_dam(hp_exp: DamageVal, d: DamageVal) -> ActionVal {
+        let base = d / cmp::max(hp_exp, DamageVal::half());
+        -ActionVal(*base * 20.0)
     }
-    fn from_enem_dam(d: DamageVal) -> ActionVal {
-        ActionVal(*d * 10.0)
+    fn from_enem_dam(hp_exp: DamageVal, d: DamageVal) -> ActionVal {
+        let base = d / cmp::max(hp_exp, DamageVal::half());
+        ActionVal(*base * 10.0)
     }
     fn from_exp(i: i32) -> ActionVal {
         ActionVal(f64::from(i * 4))
@@ -289,11 +290,10 @@ impl ActionVal {
     // ActionValueに対し移動距離で補正をかける
     pub fn comp_dist(self, steps: i32) -> ActionVal {
         const BASE: f64 = 100f64;
+        let steps = cmp::min(99, steps);
         let div = BASE.log(2.0);
         let min_val = ActionVal(1.0);
-        let comp = if steps >= 99 {
-            min_val
-        } else {
+        let comp = {
             let tmp = ActionVal((BASE - f64::from(steps)).log(2.0));
             cmp::max(tmp, min_val)
         };
@@ -302,7 +302,7 @@ impl ActionVal {
     // TODO: Magic Numberを使わないで書く
     fn stair(exp_rate: f64) -> ActionVal {
         let comp = 1.0 - exp_rate.log(2.0) / (-5.0);
-        ActionVal(10.0 * comp)
+        ActionVal(100.0 * comp)
     }
     fn recover(enough_hp: bool) -> ActionVal {
         if enough_hp {
@@ -370,7 +370,30 @@ impl PlayInfo {
 
 #[derive(Default, Debug, Clone, Copy)]
 struct MsgFLags {
-    defeated: bool,
+    defeated: bool,        // 敵を倒したかどうか
+    new_cd: Option<Coord>, // 移動したかどうか
+    invalid_item: bool,    // invalid itemを使用したかどうか
+    invalid_stair: bool,   // invalid stair
+}
+
+impl MsgFLags {
+    fn upd_with_msg(&mut self, msg: &GameMsg) {
+        match *msg {
+            GameMsg::NotValid => self.invalid_item = true,
+            GameMsg::NoStair => self.invalid_stair = true,
+            GameMsg::Defeated(_) => self.defeated = true,
+            _ => {}
+        }
+    }
+    fn reset(&mut self) {
+        *self = MsgFLags::default();
+    }
+    fn set_cd(&mut self, cd: Coord) {
+        self.new_cd = Some(cd);
+    }
+    fn need_to_reset(&self) -> bool {
+        self.invalid_item || self.invalid_stair
+    }
 }
 
 struct Equipment {
@@ -585,9 +608,17 @@ impl FeudalAgent {
         ret
     }
     // 成功判定と同時に失敗判定をする
-    fn action_sub(&mut self, dangeon_msg: DangeonMsg) -> Option<Vec<u8>> {
+    fn action_sub(&mut self) -> Option<Vec<u8>> {
         trace!(LOGGER, "action_sub: {:?}", self.play_info);
         let mut rethinked = false;
+        if self.msg_flags.need_to_reset() {
+            self.play_info.init_tact();
+        }
+        if let Some(cd) = self.msg_flags.new_cd {
+            self.set_cur_cd(cd);
+        } else {
+            self.play_info.init_tact();
+        }
         let mut nxt_playinfo = match self.play_info.tact {
             Tactics::Explore => {
                 // 割込み処理 終了判定
@@ -658,8 +689,14 @@ impl FeudalAgent {
             nxt_playinfo = self.rethink();
         }
         trace!(LOGGER, "action_sub: {:?}", nxt_playinfo);
+        self.msg_flags.reset();
         self.play_info = nxt_playinfo?;
         Some(self.play_info.act.into())
+    }
+
+    fn set_cur_cd(&mut self, cd: Coord) {
+        self.play_info.cd = cd;
+        self.dangeon.visit(cd);
     }
 }
 
@@ -670,7 +707,7 @@ impl Reactor for FeudalAgent {
             ActionResult::Changed(map) => {
                 // More で複数ターンぶんの状況を受け取る場合を考慮
                 // Mergeはこのブロック内で全部終わらせる
-                // 伝播が必要な情報はmsg_flagsに記録する
+                // !!! 伝播が必要な情報はmsg_flagsに記録する !!!
                 let mut ret_early = None;
                 let msg = {
                     let msg_str = str::from_utf8(&map[0]).unwrap();
@@ -680,20 +717,28 @@ impl Reactor for FeudalAgent {
                     }
                     msg
                 };
+                self.msg_flags.upd_with_msg(&msg);
+                let cur_cd = self.play_info.cd;
                 match msg {
                     GameMsg::Item(item_pack) => if item_pack.typ != Item::Gold {
                         self.item_list.merge(item_pack);
                     },
                     GameMsg::Defeated(enemy_name) => {
-                        self.msg_flags.defeated = true;
-                        let cur_cd = self.play_info.cd;
                         let removed = match self.play_info.act {
                             Action::Move(d) | Action::Fight(d) => {
-                                self.enemy_list.remove(cur_cd + d.to_cd())
+                                let base = cur_cd + d.to_cd();
+                                if !self.enemy_list.remove(cur_cd + d.to_cd(), enemy_name) {
+                                    Direc::vars().take(4).any(|d2| {
+                                        let cd = base + d2.to_cd();
+                                        self.enemy_list.remove(cd, enemy_name)
+                                    })
+                                } else {
+                                    true
+                                }
                             }
                             Action::Throw((d, _)) => {
-                                if let Some(mut diter) = self.play_info.cd.direc_iter(d) {
-                                    diter.any(|cd| self.enemy_list.remove(cur_cd + cd))
+                                if let Some(mut diter) = cur_cd.direc_iter(d) {
+                                    diter.any(|cd| self.enemy_list.remove(cd, enemy_name))
                                 } else {
                                     false
                                 }
@@ -713,14 +758,14 @@ impl Reactor for FeudalAgent {
                                     DamageVal::default()
                                 }
                             };
-                            if let Some(hist_mut) = self.enemy_list.get_mut(d.to_cd()) {
+                            if let Some(hist_mut) = self.enemy_list.get_mut(cur_cd + d.to_cd()) {
                                 hist_mut.hp_ex -= dam;
                             }
                         }
                         Action::Throw((d, id)) => {
                             if let Some(w) = self.item_list.get_weapon(id) {
                                 let dam = w.throw().expect_val();
-                                if let Some(mut diter) = self.play_info.cd.direc_iter(d) {
+                                if let Some(mut diter) = cur_cd.direc_iter(d) {
                                     diter.any(|cd| {
                                         if let Some(hist_mut) = self.enemy_list.get_mut(cd) {
                                             hist_mut.hp_ex -= dam;
@@ -754,17 +799,17 @@ impl Reactor for FeudalAgent {
                     return Some(Action::Die.into());
                 }
                 if let Some(cd) = self.dangeon.player_cd() {
-                    self.play_info.cd = cd;
-                    self.dangeon.visit(cd);
+                    self.msg_flags.set_cd(cd);
                 }
                 self.enemy_list.merge(&self.dangeon);
+                trace!(LOGGER, "Enemy List {:?}", self.enemy_list);
                 if ret_early != None {
                     debug!(LOGGER, "ret_early: {:?}", ret_early);
                     return ret_early;
                 }
-                self.action_sub(dangeon_msg)
+                self.action_sub()
             }
-            ActionResult::NotChanged => self.action_sub(DangeonMsg::None),
+            ActionResult::NotChanged => self.action_sub(),
             ActionResult::GameEnded => None,
         }
     }
@@ -779,7 +824,7 @@ mod enemy_search {
     #[derive(Clone, Debug)]
     struct SearchPlayer {
         cd: Coord,
-        hp_exp: DamageVal,
+        hp_ex: DamageVal,
         wield: Weapon,
         throw: Vec<(Weapon, u32)>,
     }
@@ -787,14 +832,14 @@ mod enemy_search {
         fn initial(agent: &FeudalAgent) -> SearchPlayer {
             SearchPlayer {
                 cd: agent.play_info.cd,
-                hp_exp: DamageVal(f64::from(agent.player_stat.cur_hp)),
+                hp_ex: DamageVal(f64::from(agent.player_stat.cur_hp)),
                 wield: agent.cur_weapon().unwrap_or_default(),
                 throw: agent.throw_weapon(),
             }
         }
         fn is_live(&self) -> bool {
             let threshold = -0.5;
-            *self.hp_exp > threshold
+            *self.hp_ex > threshold
         }
     }
     // simulationするアクション
@@ -827,11 +872,12 @@ mod enemy_search {
     ) -> Option<SearchState> {
         let cur_cd = state.player.cd;
         let mut next_state = state.clone();
-        let mut caused_dam = DamageVal::default();
+        let mut caused_dam = ActionVal::default();
         let (mut gained_gold, mut gained_exp) = (0, 0);
         {
-            let mut cause_damage = |enem: &mut EnemyHist, dam| {
-                caused_dam += dam;
+            let cur_hp = next_state.player.hp_ex;
+            let mut cause_damage = |enem: &mut EnemyHist, dam: DamageVal| {
+                caused_dam += ActionVal::from_my_dam(cur_hp, dam);
                 enem.hp_ex -= dam;
                 enem.running = true;
                 if !enem.is_live() {
@@ -890,7 +936,7 @@ mod enemy_search {
                 .collect(),
         );
         let cur_cd = state.player.cd;
-        let mut received_dam = DamageVal::default();
+        let mut received_dam = ActionVal::default();
         'outer: for enem_ref in next_state.enemy_list.iter_mut() {
             if !enem_ref.running {
                 continue;
@@ -902,8 +948,8 @@ mod enemy_search {
                     let prob = hit_rate_deffence(&agent.player_stat, &enem_ref.typ);
                     let dam = expect_dam_deffence(enem_ref.typ);
                     let dam = dam * DamageVal(*prob);
-                    next_state.player.hp_exp -= dam;
-                    received_dam += dam;
+                    next_state.player.hp_ex -= dam;
+                    received_dam += ActionVal::from_enem_dam(enem_ref.hp_ex, dam);
                     continue 'outer;
                 }
             }
@@ -918,8 +964,7 @@ mod enemy_search {
             }
         }
         let mut val = ActionVal::from_gold(gained_gold) + ActionVal::from_exp(gained_exp)
-            + ActionVal::from_my_dam(received_dam)
-            + ActionVal::from_enem_dam(caused_dam);
+            + received_dam + caused_dam;
         if !next_state.player.is_live() {
             val += ActionVal::death();
             next_state.end = true;
@@ -959,6 +1004,15 @@ mod enemy_search {
         for _turn in 0..SEARCH_DEPTH_MAX {
             state_list.sort_unstable();
             let mut next_states = Vec::new();
+            macro_rules! add_state {
+                ($ns:ident) => {
+                    if $ns.val.is_nan() {
+                        warn!(LOGGER, "state value is NAN");
+                    } else {
+                        next_states.push($ns);
+                    }
+                }
+            }
             ma = cmp::max(ma, state_list.len());
             if let Some(st) = state_list.iter().next() {
                 worst = cmp::min(worst, st.val);
@@ -971,7 +1025,7 @@ mod enemy_search {
                 // just try to move or throw
                 for &d in Direc::vars().take(8) {
                     if let Some(ns) = simulate_act(agent, cur_state, TryAction::Move(d)) {
-                        next_states.push(ns);
+                        add_state!(ns);
                     }
                 }
                 if let Some(w) = select_throw(&cur_state.player.throw) {
@@ -987,7 +1041,7 @@ mod enemy_search {
                                     wep.1 -= 1;
                                 }
                             }
-                            next_states.push(ns);
+                            add_state!(ns);
                         }
                     }
                 }

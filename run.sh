@@ -1,2 +1,2 @@
 #!/usr/bin/sh
-cargo run -- --debug debug.txt --level trace --vis
+env RUST_BACKTRACE=1 cargo run -- --debug debug.txt --level trace --vis --maxloop 1000

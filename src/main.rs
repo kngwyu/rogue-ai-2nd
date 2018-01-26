@@ -32,26 +32,25 @@ use agent::FeudalAgent as Agent;
 use cgw::{GameSetting, Severity};
 use consts::*;
 use data::*;
-use std::error::Error;
 use std::time::Duration;
+
 fn main() {
-    let iter = match MATCHES.value_of("ITER").unwrap_or("1").parse::<usize>() {
-        Ok(i) => i,
-        Err(why) => panic!("usage: --iter 10, {:?}", why.description()),
-    };
-    for _ in 0..iter {
-        let mut gs = GameSetting::new("rogue")
-            .env("ROGUEUSER", "2ndAI")
-            .lines(LINES + 2)
-            .columns(COLUMNS)
-            .debug_file("debug_cgw.txt")
-            .debug_level(Severity::Debug)
-            .max_loop(100);
-        if MATCHES.is_present("VIS") {
-            gs = gs.draw_on(Duration::from_millis(150));
-        }
-        let mut ai = Agent::new();
-        let game = gs.build();
-        game.play(&mut ai);
+    let max_loop = MATCHES
+        .value_of("MAX_LOOP")
+        .unwrap_or("100")
+        .parse::<usize>()
+        .expect("usage: --maxloop 1000");
+    let mut gs = GameSetting::new("rogue")
+        .env("ROGUEUSER", "2ndAI")
+        .lines(LINES + 2)
+        .columns(COLUMNS)
+        .debug_file("debug_cgw.txt")
+        .debug_level(Severity::Debug)
+        .max_loop(max_loop);
+    if MATCHES.is_present("VIS") {
+        gs = gs.draw_on(Duration::from_millis(150));
     }
+    let mut ai = Agent::new();
+    let game = gs.build();
+    game.play(&mut ai);
 }
