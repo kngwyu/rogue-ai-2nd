@@ -1,4 +1,6 @@
 # rogue-ai-2nd
+[![Build Status](https://travis-ci.org/kngwyu/rogue-ai-2nd.svg?branch=master)](https://travis-ci.org/kngwyu/rogue-ai-2nd)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 It's my rogue AI.  
 It's in early development stage and not so strong.  
 I uploaded some plays of this AI in [asciinema](https://asciinema.org/~kngwyu).
