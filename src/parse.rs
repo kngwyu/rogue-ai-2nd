@@ -286,7 +286,7 @@ impl MsgParse {
 mod test {
     use super::*;
     #[test]
-    fn status_test() {
+    fn test_status() {
         let text1 = "Level: 3  Gold: 237    Hp: 18(25)  Str: 16(16)  Arm: 4   Exp: 3/23  Hungry";
         let text2 =
             "Level: 1  Gold: 0      Hp: 12(12)  Str: 16(16)  Arm: 4   Exp: 1/0               ";
@@ -307,7 +307,7 @@ mod test {
         assert_eq!(parser.parse(text2).unwrap(), PlayerStatus::initial());
     }
     #[test]
-    fn msg_test() {
+    fn test_msg() {
         let drink_msgs = vec![
             "Hey, this tastes great.  It make you feel warm all over--More--",
         ];

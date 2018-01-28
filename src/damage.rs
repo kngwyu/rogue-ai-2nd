@@ -154,14 +154,14 @@ fn add_dam(strength: i32) -> Option<i32> {
 mod test {
     use super::*;
     #[test]
-    fn dice_test() {
+    fn test_dice() {
         assert_approx_eq!(*Dice::new(1, 6).expect_val(), 3.5);
         assert_approx_eq!(*Dice::new(3, 6).expect_val(), 10.5);
         let v = vec![Dice::new(1, 6), Dice::new(1, 5)];
         assert_approx_eq!(*v.expect_val(), 6.5);
     }
     #[test]
-    fn hit_rate_test() {
+    fn test_hit_rate() {
         let player = PlayerStatus::initial();
         let ene = EnemyHist::from_type(Enemy::Emu);
         println!("{:?}", hit_rate_attack(&player, &ene));
