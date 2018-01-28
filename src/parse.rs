@@ -193,7 +193,6 @@ impl MsgParse {
             ($item:expr,$str:expr) => (ItemPack::new(id, $str, num, $item));
         }
         let ret_with_n = |item: Item, re: &Regex| -> ItemPack {
-            println!("{}", &cap["item"]);
             let cp = re.captures(&cap["item"]).unwrap();
             ret_item!(item, &cp["name"])
         };
