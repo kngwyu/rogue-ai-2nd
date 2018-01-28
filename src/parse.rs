@@ -137,9 +137,9 @@ impl MsgParse {
                 r"mulet",            // 24
             ]).unwrap(),
             integer: Regex::new(r"\D*(?P<int>\d*)").unwrap(),
-            potion: Regex::new(r".*?(?P<name>\w*) potion").unwrap(),
+            potion: Regex::new(r".*?(?P<name>.*?) potion").unwrap(),
             scroll: Regex::new(r".*'(?P<name>.*)'").unwrap(),
-            ring: Regex::new(r".* (?P<name>\w*) ring").unwrap(),
+            ring: Regex::new(r".*?(?P<name>.*?) ring").unwrap(),
         }
     }
 
@@ -193,6 +193,7 @@ impl MsgParse {
             ($item:expr,$str:expr) => (ItemPack::new(id, $str, num, $item));
         }
         let ret_with_n = |item: Item, re: &Regex| -> ItemPack {
+            println!("{}", &cap["item"]);
             let cp = re.captures(&cap["item"]).unwrap();
             ret_item!(item, &cp["name"])
         };
@@ -330,6 +331,7 @@ mod test {
             "You now have 2 scrolls titled 'org vly gopsehzok hasnatue' (o)--More--",
             "You now have scale mail (i)",
             "You now have a tiger eye ring (f)",
+            "You now have a kryptonite ring (f)",
             "You now have 2 rations of food (a)--More--",
             "I see no monster there",
             "You are now wearing +1 ring mail [protection 4]",
@@ -409,7 +411,17 @@ mod test {
             (
                 GameMsg::Item(ItemPack {
                     id: 102,
-                    name: "eye".to_owned(),
+                    name: "tiger eye".to_owned(),
+                    num: 1,
+                    typ: Item::Ring,
+                    val: None,
+                }),
+                false,
+            ),
+            (
+                GameMsg::Item(ItemPack {
+                    id: 102,
+                    name: "kryptonite".to_owned(),
                     num: 1,
                     typ: Item::Ring,
                     val: None,
