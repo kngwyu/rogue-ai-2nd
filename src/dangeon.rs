@@ -279,7 +279,7 @@ impl Dangeon {
         }
     }
 
-    fn can_move_sub(cur: Surface, nxt: Surface, d: Direc) -> Option<bool> {
+    fn can_move_sub(cur: Surface, nxt: Surface, d: Direc, is_enemy: bool) -> Option<bool> {
         match cur {
             Surface::Floor => match nxt {
                 Surface::Floor | Surface::Stair | Surface::Trap => Some(true),
@@ -289,7 +289,7 @@ impl Dangeon {
             },
             Surface::Road => match nxt {
                 Surface::Road | Surface::Stair | Surface::Trap | Surface::Door => {
-                    Some(!d.is_diag())
+                    Some(!d.is_diag() || is_enemy)
                 }
                 Surface::Wall => Some(false),
                 _ => None,
@@ -305,7 +305,7 @@ impl Dangeon {
         }
     }
 
-    pub fn can_move(&self, cd: Coord, d: Direc) -> Option<bool> {
+    fn can_move_common(&self, cd: Coord, d: Direc, is_enemy: bool) -> Option<bool> {
         if d == Direc::Stay {
             return Some(true);
         }
@@ -321,7 +321,15 @@ impl Dangeon {
         } else {
             nxt_cell.surface
         };
-        Dangeon::can_move_sub(cur_sur, nxt_sur, d)
+        Dangeon::can_move_sub(cur_sur, nxt_sur, d, is_enemy)
+    }
+
+    pub fn can_move(&self, cd: Coord, d: Direc) -> bool {
+        self.can_move_common(cd, d, false) == Some(true)
+    }
+
+    pub fn can_move_enemy(&self, cd: Coord, d: Direc) -> bool {
+        self.can_move_common(cd, d, true) == Some(true)
     }
 
     pub fn make_dist_map(&self, start: Coord) -> Option<SimpleMap<i32>> {
@@ -334,7 +342,7 @@ impl Dangeon {
                 let nxt_cd = cd + d.to_cd();
                 let cur_dist = *dist.get(cd)?; // ここは?でいい
                 if let Some(nxt_dist_ref) = dist.get_mut(nxt_cd) {
-                    let ok = self.can_move(cd, d) == Some(true) && *nxt_dist_ref == INF_DIST;
+                    let ok = self.can_move(cd, d) && *nxt_dist_ref == INF_DIST;
                     if ok {
                         que.push_back(nxt_cd);
                         *nxt_dist_ref = cur_dist + 1;
@@ -347,7 +355,7 @@ impl Dangeon {
 
     pub fn recover(&self, cd: Coord) -> Option<Direc> {
         for &d in Direc::vars() {
-            if self.can_move(cd, d) == Some(true) {
+            if self.can_move(cd, d) {
                 return Some(d);
             }
         }
@@ -392,7 +400,7 @@ impl Dangeon {
             for &d in Direc::vars().take(8) {
                 let nxt_cd = cd + d.to_cd();
                 if let Some(nxt_used_ref) = used.get_mut(nxt_cd) {
-                    let ok = self.can_move(cd, d) == Some(true) && !*nxt_used_ref;
+                    let ok = self.can_move(cd, d) && !*nxt_used_ref;
                     if ok {
                         que.push_back(nxt_cd);
                         *nxt_used_ref = true;
@@ -453,8 +461,7 @@ impl Dangeon {
             }
             for (i, &d) in Direc::vars().take(8).enumerate() {
                 let nxt_cd = cd + d.to_cd();
-                let can_move = self.can_move(cd, d);
-                if can_move == Some(true) {
+                if self.can_move(cd, d) {
                     if let Some(nxt_used_ref) = used.get_mut(nxt_cd) {
                         if !*nxt_used_ref {
                             que.push_back(nxt_cd);
@@ -1009,11 +1016,11 @@ mod test {
         let cur = d.player_cd().unwrap();
         assert_eq!(cur, Coord::new(8, 9));
         let item = d.find_nearest_item(cur).unwrap();
-        assert_approx_eq!(*item.1, 10.0);
+        assert_approx_eq!(*item.1, *ActionVal::from_item(Item::Potion));
         let stair = d.find_stair().unwrap();
         let dist = d.make_dist_map(cur).unwrap();
-        assert_eq!(d.can_move(stair, Direc::RightUp), Some(true));
-        assert_eq!(d.can_move(stair, Direc::Down), Some(false));
+        assert_eq!(d.can_move(stair, Direc::RightUp), true);
+        assert_eq!(d.can_move(stair, Direc::Down), false);
         assert_eq!(28, *dist.get(stair).unwrap());
         println!("{:?}", d.explore_rate());
     }

@@ -272,7 +272,7 @@ impl ActionVal {
         ActionVal(*base * 10.0)
     }
     fn from_exp(i: i32) -> ActionVal {
-        ActionVal(f64::from(i * 4))
+        ActionVal(f64::from(i * 10))
     }
     fn from_hung(hung: i8) -> ActionVal {
         match hung {
@@ -289,7 +289,7 @@ impl ActionVal {
             Item::Weapon(_) => 20.0,
             Item::Wand => 10.0,
             Item::Food(_) => 20.0,
-            Item::Gold => 30.0,
+            Item::Gold => 25.0,
             Item::Ring => 10.0,
             Item::Amulet => 100.0,
             Item::None => 0.0,
@@ -334,7 +334,7 @@ impl ActionVal {
         if enough_hp {
             return ActionVal::default();
         }
-        ActionVal(100.0)
+        ActionVal(30.0)
     }
     fn death() -> ActionVal {
         -ActionVal(1000.0)
@@ -451,6 +451,7 @@ pub struct FeudalAgent {
     item_call: ItemCall,
     msg_flags: MsgFLags,
     equipment: Equipment,
+    dead: bool,
 }
 
 impl FeudalAgent {
@@ -466,6 +467,7 @@ impl FeudalAgent {
             item_call: ItemCall(0),
             msg_flags: MsgFLags::default(),
             equipment: Equipment::initial(),
+            dead: false,
         }
     }
     fn cur_weapon(&self) -> Option<Weapon> {
@@ -535,7 +537,7 @@ impl FeudalAgent {
         let mut ret = None;
         for &d in Direc::vars().take(8) {
             let nxt = cd + d.to_cd();
-            if self.dangeon.can_move(cd, d) == Some(true) {
+            if self.dangeon.can_move(cd, d) {
                 let dist_diff = cur_dist - *dist.get(nxt)?;
                 if dist_diff > max_diff {
                     max_diff = dist_diff;
@@ -732,6 +734,9 @@ impl FeudalAgent {
 impl Reactor for FeudalAgent {
     fn action(&mut self, action_res: ActionResult, turn: usize) -> Option<Vec<u8>> {
         trace!(LOGGER, "{:?} {}", action_res, turn);
+        if self.dead {
+            return None;
+        }
         match action_res {
             ActionResult::Changed(map) => {
                 // More で複数ターンぶんの状況を受け取る場合を考慮
@@ -825,6 +830,7 @@ impl Reactor for FeudalAgent {
                 }
                 let dangeon_msg = self.dangeon.merge(&map[1..(LINES + 1)]);
                 if dangeon_msg == DangeonMsg::Die {
+                    debug!(LOGGER, "Die turn: {}", turn);
                     return Some(Action::Die.into());
                 }
                 if let Some(cd) = self.dangeon.player_cd() {
@@ -847,8 +853,8 @@ impl Reactor for FeudalAgent {
 // 探索部はこっちに持ってきた(見づらいから)
 mod enemy_search {
     use super::*;
-    const SEARCH_DEPTH_MAX: usize = 8;
-    const SEARCH_WIDTH_MAX: usize = 100;
+    const SEARCH_DEPTH_MAX: usize = 10;
+    const SEARCH_WIDTH_MAX: usize = 400;
     // 探索用のPlayerState
     #[derive(Clone, Debug)]
     struct SearchPlayer {
@@ -917,8 +923,7 @@ mod enemy_search {
             // 自分の行動
             match action {
                 TryAction::Move(d) => {
-                    let can_move = agent.dangeon.can_move(cur_cd, d)?;
-                    if !can_move {
+                    if !agent.dangeon.can_move(cur_cd, d) {
                         return None;
                     }
                     let ncd = cur_cd + d.to_cd();
@@ -964,10 +969,10 @@ mod enemy_search {
                 .cloned()
                 .collect(),
         );
-        let cur_cd = state.player.cd;
+        let cur_cd = next_state.player.cd;
         let mut received_dam = ActionVal::default();
         'outer: for enem_ref in next_state.enemy_list.iter_mut() {
-            if !enem_ref.running {
+            if !enem_ref.running && caused_dam < ActionVal(0.001) {
                 continue;
             }
             // 殴れるかチェック
@@ -983,8 +988,11 @@ mod enemy_search {
                 }
             }
             let cur_dist = cur_cd.dist_euc(&enem_ref.cd);
-            for d in Direc::vars() {
+            for &d in Direc::vars() {
                 let cd = enem_ref.cd + d.to_cd();
+                if !agent.dangeon.can_move_enemy(enem_ref.cd, d) {
+                    continue;
+                }
                 let dist = cur_cd.dist_euc(&cd);
                 if dist < cur_dist {
                     enem_ref.cd = cd;
@@ -1080,9 +1088,10 @@ mod enemy_search {
         let best_state = state_list.iter().max()?;
         trace!(
             LOGGER,
-            "best_score: {:?}, worst: {:?}",
+            "best_score: {:?}, worst: {:?}, best_action: {:?}",
             best_state.val,
-            worst
+            worst,
+            best_state.actions.get(0)?.to_action(agent),
         );
         Some((
             best_state.val - worst,
