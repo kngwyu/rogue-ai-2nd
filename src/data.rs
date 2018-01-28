@@ -129,9 +129,11 @@ pub enum Action {
     RemoveRing,
     DropObject(u8),
     SaveGame,
+    Search,
     Quit,
     Die,
     Space,
+    Enter,
     None,
 }
 
@@ -161,9 +163,11 @@ impl Into<Vec<u8>> for Action {
             Action::RemoveRing => vec![b'R'],
             Action::DropObject(b) => vec![b'd', b],
             Action::SaveGame => vec![b'S'],
+            Action::Search => vec![b's'],
             Action::Quit => vec![b'Q', b'y'],
             Action::Die => vec![*ENTER, *ENTER],
             Action::Space => vec![*SPACE],
+            Action::Enter => vec![*ENTER],
             Action::None => vec![],
         }
     }
@@ -867,6 +871,12 @@ impl Surface {
     pub fn can_be_floor(&self) -> bool {
         match *self {
             Surface::Floor | Surface::Trap | Surface::Stair => true,
+            _ => false,
+        }
+    }
+    pub fn can_be_road(&self) -> bool {
+        match *self {
+            Surface::Road | Surface::Trap | Surface::Stair => true,
             _ => false,
         }
     }

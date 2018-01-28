@@ -46,6 +46,20 @@ impl EnemyList {
         }
         None
     }
+    fn get_around_mut(&mut self, cd: Coord, enem_arg: Enemy) -> Option<&mut EnemyHist> {
+        for enem in self.iter_mut() {
+            if enem.typ != enem_arg {
+                continue;
+            }
+            for &d in Direc::vars().take(8) {
+                let ncd = cd + d.to_cd();
+                if enem.cd == ncd {
+                    return Some(enem);
+                }
+            }
+        }
+        None
+    }
     fn init(&mut self) {
         *self = EnemyList::new();
     }
@@ -298,8 +312,8 @@ impl ActionVal {
     pub fn not_visited(around_none: u8) -> ActionVal {
         ActionVal(f64::from(around_none) + 5.0)
     }
-    // Exploreに対する評価値
-    pub fn explore(nr_areas: u8) -> ActionVal {
+    // searchコマンドに対する評価値
+    pub fn search(nr_areas: u8) -> ActionVal {
         let val = match nr_areas {
             1 => 3.0,
             2 => 10.0,
@@ -312,6 +326,12 @@ impl ActionVal {
         const PARTIRION_RATE: f64 = 0.3;
         let val = *self * PARTIRION_RATE + *self * (1.0 - PARTIRION_RATE) * rate;
         ActionVal(val)
+    }
+    // ActionValに対し探索の深さで補正をかける
+    pub fn comp_search_depth(self, turn: usize) -> ActionVal {
+        const BASE: f64 = enemy_search::SEARCH_DEPTH_MAX as f64;
+        let comp = (BASE - turn as f64).log(2.0) / 2.0;
+        ActionVal(*self * comp)
     }
     // ActionValueに対し移動距離で補正をかける
     pub fn comp_dist(self, steps: i32) -> ActionVal {
@@ -357,6 +377,7 @@ enum Tactics {
     Explore,
     ToStair,
     Recover,
+    Search,
     None,
 }
 
@@ -390,6 +411,15 @@ impl PlayInfo {
     fn update_act(&self, act: Action) -> PlayInfo {
         let mut res = self.clone();
         res.act = act;
+        res
+    }
+    // actionのみupdateして、ついでにinitする(searchなど)
+    fn update_act_init(&self, act: Action) -> PlayInfo {
+        let mut res = self.clone();
+        res.act = act;
+        res.tact = Tactics::None;
+        res.dest = None;
+        res.priority = ActionVal::default();
         res
     }
 }
@@ -558,32 +588,41 @@ impl FeudalAgent {
     fn rethink(&mut self) -> Option<PlayInfo> {
         // 敵→もう書いた
         // Explore, PickItem, Recover, Tostair が必要
-        let enemy_or_eat = self.interupput().unwrap_or_default();
+        let (fight_val, fight_act) = enemy_search::exec(self).unwrap_or_default();
         let recover_val = ActionVal::recover(self.player_stat.have_enough_hp());
 
-        let (item_cd, item_val) = self.dangeon
-            .find_nearest_item(self.play_info.cd)
-            .unwrap_or_default();
         let cur_cd = self.play_info.cd;
-        let (explore_cd, explore_val) = self.dangeon.explore(cur_cd).unwrap_or_default();
+        let dist = self.dangeon.make_dist_map(cur_cd)?;
+
+        let (item_cd, item_val) = self.dangeon.find_nearest_item(&dist).unwrap_or_default();
+        let (explore_cd, explore_val) = self.dangeon.explore(&dist).unwrap_or_default();
         let (stair_cd, stair_val) = if let Some(stair_cd) = self.dangeon.find_stair() {
             let exp_rate = self.dangeon.explore_rate();
             (stair_cd, ActionVal::stair(*exp_rate))
         } else {
             (Coord::default(), ActionVal::default())
         };
-
+        let (search_cd, search_val) = self.dangeon.search(&dist, cur_cd).unwrap_or_default();
+        let hung = self.player_stat.hungry_level;
+        let eat_val = self.item_list
+            .any_food()
+            .map_or(ActionVal::default(), |_| ActionVal::from_hung(hung));
         let max_act = comp_action!(
-            enemy_or_eat.priority,
+            fight_val,
             recover_val,
             item_val,
             explore_val,
-            stair_val
+            stair_val,
+            search_val,
+            eat_val
         );
         trace!(
             LOGGER,
-            "rethink\n enem: {:?} \n recv: {:?}\n item: {:?} {:?}\n explore: {:?} {:?}\n stair: {:?} {:?}",
-            enemy_or_eat.priority,
+            "rethink
+ fight: {:?} \n recv: {:?}
+ item: {:?} {:?} \n  explore: {:?} {:?}
+ stair: {:?} {:?}\n search: {:?} {:?}\n eat: {:?}",
+            fight_val,
             recover_val,
             item_val,
             item_cd,
@@ -591,9 +630,15 @@ impl FeudalAgent {
             explore_cd,
             stair_val,
             stair_cd,
+            search_cd,
+            search_val,
+            eat_val,
         );
         let ret = match max_act {
-            0 => Some(enemy_or_eat),
+            0 => Some(
+                self.play_info
+                    .update(Tactics::Fight, fight_act, None, fight_val),
+            ),
             1 => {
                 let dir = self.dangeon.recover(cur_cd).unwrap_or_default();
                 Some(
@@ -631,6 +676,24 @@ impl FeudalAgent {
                         .update(Tactics::ToStair, act, Some(stair_cd), stair_val),
                 )
             }
+            5 => {
+                let dir = self.move_to_dest_sub(search_cd).unwrap_or_default();
+                let act = if dir == Direc::Stay {
+                    Action::Search
+                } else {
+                    Action::Move(dir)
+                };
+                Some(
+                    self.play_info
+                        .update(Tactics::Search, act, Some(search_cd), search_val),
+                )
+            }
+            6 => Some(self.play_info.update(
+                Tactics::None,
+                Action::EatFood(self.item_list.any_food()?),
+                None,
+                eat_val,
+            )),
             _ => None,
         };
         ret
@@ -680,8 +743,21 @@ impl FeudalAgent {
                     }
                 }
             }
+            // 割込み処理
+            Tactics::Search => {
+                let inter = self.interupput();
+                if inter.is_some() {
+                    inter
+                } else {
+                    if self.is_dest() {
+                        Some(self.play_info.update_act_init(Action::Search))
+                    } else {
+                        self.move_to_dest()
+                    }
+                }
+            }
+            // HPの確認 割込み処理
             Tactics::Recover => {
-                // HPの確認 割込み処理
                 if self.player_stat.have_enough_hp() {
                     rethinked = true;
                     self.rethink()
@@ -718,10 +794,13 @@ impl FeudalAgent {
         }
         trace!(LOGGER, "action_sub: {:?}", nxt_playinfo);
         self.msg_flags.reset();
+        let cur_cd = self.play_info.cd;
         self.play_info = nxt_playinfo?;
-        if let Action::Throw((_, id)) = self.play_info.act {
-            self.item_list.consume(id);
-        }
+        match self.play_info.act {
+            Action::Move(d) => self.dangeon.moved(cur_cd, d),
+            Action::Throw((_, id)) => self.item_list.consume(id),
+            _ => {}
+        };
         Some(self.play_info.act.into())
     }
 
@@ -735,7 +814,7 @@ impl Reactor for FeudalAgent {
     fn action(&mut self, action_res: ActionResult, turn: usize) -> Option<Vec<u8>> {
         trace!(LOGGER, "{:?} {}", action_res, turn);
         if self.dead {
-            return None;
+            return Some(Action::Enter.into());
         }
         match action_res {
             ActionResult::Changed(map) => {
@@ -813,6 +892,11 @@ impl Reactor for FeudalAgent {
                         }
                         _ => {}
                     },
+                    GameMsg::Injured(enem) => {
+                        if let Some(enem_hist) = self.enemy_list.get_around_mut(cur_cd, enem) {
+                            enem_hist.running = true;
+                        }
+                    }
                     GameMsg::CallIt => ret_early = Some(self.item_call.next().unwrap()),
                     _ => {}
                 }
@@ -830,6 +914,7 @@ impl Reactor for FeudalAgent {
                 }
                 let dangeon_msg = self.dangeon.merge(&map[1..(LINES + 1)]);
                 if dangeon_msg == DangeonMsg::Die {
+                    self.dead = true;
                     debug!(LOGGER, "Die turn: {}", turn);
                     return Some(Action::Die.into());
                 }
@@ -853,7 +938,7 @@ impl Reactor for FeudalAgent {
 // 探索部はこっちに持ってきた(見づらいから)
 mod enemy_search {
     use super::*;
-    const SEARCH_DEPTH_MAX: usize = 10;
+    pub const SEARCH_DEPTH_MAX: usize = 10;
     const SEARCH_WIDTH_MAX: usize = 400;
     // 探索用のPlayerState
     #[derive(Clone, Debug)]
@@ -904,6 +989,7 @@ mod enemy_search {
         agent: &FeudalAgent,
         state: &SearchState,
         action: TryAction,
+        turn: usize,
     ) -> Option<SearchState> {
         let cur_cd = state.player.cd;
         let mut next_state = state.clone();
@@ -972,7 +1058,7 @@ mod enemy_search {
         let cur_cd = next_state.player.cd;
         let mut received_dam = ActionVal::default();
         'outer: for enem_ref in next_state.enemy_list.iter_mut() {
-            if !enem_ref.running && caused_dam < ActionVal(0.001) {
+            if !enem_ref.running {
                 continue;
             }
             // 殴れるかチェック
@@ -1006,6 +1092,7 @@ mod enemy_search {
             val += ActionVal::death();
             next_state.end = true;
         }
+        val = val.comp_search_depth(turn);
         next_state.val += val;
         next_state.actions.push(action);
         Some(next_state)
@@ -1038,7 +1125,7 @@ mod enemy_search {
         let _thread_num = num_cpus::get();
         let mut ma = 0;
         let mut worst = ActionVal::default();
-        for _turn in 0..SEARCH_DEPTH_MAX {
+        for turn in 0..SEARCH_DEPTH_MAX {
             state_list.sort_unstable();
             let mut next_states = Vec::new();
             macro_rules! add_state {
@@ -1061,7 +1148,7 @@ mod enemy_search {
                 }
                 // just try to move or throw
                 for &d in Direc::vars().take(8) {
-                    if let Some(ns) = simulate_act(agent, cur_state, TryAction::Move(d)) {
+                    if let Some(ns) = simulate_act(agent, cur_state, TryAction::Move(d), turn) {
                         add_state!(ns);
                     }
                 }
@@ -1071,7 +1158,7 @@ mod enemy_search {
                     }
                     for &d in Direc::vars().take(8) {
                         if let Some(mut ns) =
-                            simulate_act(agent, cur_state, TryAction::Throw((d, w)))
+                            simulate_act(agent, cur_state, TryAction::Throw((d, w)), turn)
                         {
                             for wep in &mut ns.player.throw {
                                 if wep.0 == w {

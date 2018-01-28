@@ -73,7 +73,7 @@ impl Cell {
         val
     }
 
-    pub fn go(&mut self, d: Direc) {
+    pub fn moved(&mut self, d: Direc) {
         let ins = match d {
             Direc::Up => ExplAttr::UP,
             Direc::Down => ExplAttr::DOWN,
@@ -131,26 +131,26 @@ default_none!(DangeonMsg);
 #[derive(Debug, Clone)]
 pub struct Dangeon {
     inner: Vec<Vec<Cell>>,
-    empty: bool,
 }
 
 impl Default for Dangeon {
     fn default() -> Dangeon {
         Dangeon {
             inner: vec![vec![Cell::default(); COLUMNS]; LINES],
-            empty: true,
         }
     }
 }
 
 impl Dangeon {
-    pub fn is_empty(&self) -> bool {
-        self.empty
-    }
-
     pub fn visit(&mut self, cd: Coord) {
         if let Some(cell) = self.get_mut(cd) {
             cell.visit();
+        }
+    }
+
+    pub fn moved(&mut self, cd: Coord, d: Direc) {
+        if let Some(cell) = self.get_mut(cd) {
+            cell.moved(d);
         }
     }
 
@@ -172,7 +172,6 @@ impl Dangeon {
                 }
             }
         }
-        self.empty = false;
         if let Some(floor_cd) = new_floor {
             self.extend_floor(floor_cd);
         }
@@ -183,7 +182,6 @@ impl Dangeon {
         for (cell_mut, _) in self.iter_mut() {
             *cell_mut = Cell::default();
         }
-        self.empty = true;
     }
 
     pub fn iter(&self) -> CoordIter<Dangeon> {
@@ -387,6 +385,34 @@ impl Dangeon {
         ProbVal(known / all as f64)
     }
 
+    fn find_not_visited(&self) -> Vec<Coord> {
+        self.iter()
+            .filter_map(|(cell, cd)| {
+                if !cell.is_visited() && cell.surface != Surface::None {
+                    Some(cd)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+    //  0 | 1 | 2
+    //  -   -   -
+    //  3 | 4 | 5
+    //  -   -   -
+    //  6 | 7 | 8
+    pub fn explore(&self, dist: &SimpleMap<i32>) -> Option<(Coord, ActionVal)> {
+        let not_visited = self.find_not_visited();
+        let mut non_visited_val = ActionVal::default();
+        let non_visited_cd = not_visited.iter().max_by_key(|&&cd| {
+            let dis = *dist.get(cd).unwrap_or(&INF_DIST);
+            let val = ActionVal::not_visited(self.count_around_none(cd)).comp_dist(dis);
+            non_visited_val = cmp::max(non_visited_val, val);
+            val
+        })?;
+        Some((non_visited_cd.clone(), non_visited_val))
+    }
+
     // BFSして葉がdead_endかどうか判断する
     // dead_endと判断されたCoordとそのCellに入るための進行方向を返す
     fn find_dead_end(&self, start: Coord) -> Vec<(Coord, Direc)> {
@@ -420,7 +446,7 @@ impl Dangeon {
                 let nxt_cd = cd + d.to_cd();
                 *or_empty_vec!(used.get_mut(nxt_cd)) = true;
                 if let Some(nxt_cell_ref) = self.get(nxt_cd) {
-                    if nxt_cell_ref.surface == Surface::Road {
+                    if nxt_cell_ref.surface.can_be_road() {
                         if let Some(_) = adj {
                             continue 'outer;
                         } else {
@@ -434,18 +460,6 @@ impl Dangeon {
             }
         }
         res
-    }
-
-    fn find_not_visited(&self) -> Vec<Coord> {
-        self.iter()
-            .filter_map(|(cell, cd)| {
-                if !cell.is_visited() && cell.surface != Surface::None {
-                    Some(cd)
-                } else {
-                    None
-                }
-            })
-            .collect()
     }
 
     // 各壁について最も探索回数の少ないマスを適当に集めて返す
@@ -498,24 +512,8 @@ impl Dangeon {
         }
         res
     }
-    //  0 | 1 | 2
-    //  -   -   -
-    //  3 | 4 | 5
-    //  -   -   -
-    //  6 | 7 | 8
-    pub fn explore(&self, player_cd: Coord) -> Option<(Coord, ActionVal)> {
-        let dist = self.make_dist_map(player_cd)?;
 
-        // calc not visited
-        let not_visited = self.find_not_visited();
-        let mut non_visited_val = ActionVal::default();
-        let non_visited_cd = not_visited.iter().max_by_key(|&&cd| {
-            let dis = *dist.get(cd).unwrap_or(&INF_DIST);
-            let val = ActionVal::not_visited(self.count_around_none(cd)).comp_dist(dis);
-            non_visited_val = cmp::max(non_visited_val, val);
-            val
-        });
-
+    pub fn search(&self, dist: &SimpleMap<i32>, player_cd: Coord) -> Option<(Coord, ActionVal)> {
         let mut has_room = [false; 9];
         self.iter().for_each(|(cell, cd)| {
             let block = cd.block();
@@ -540,7 +538,7 @@ impl Dangeon {
         let dead_end_cd = dead_end.iter().max_by_key(|cd_and_dir| {
             let nr_areas = calc_nonroom_area(cd_and_dir.0, cd_and_dir.1);
             let dis = *dist.get(cd_and_dir.0).unwrap_or(&INF_DIST);
-            let val = ActionVal::explore(nr_areas).comp_dist(dis);
+            let val = ActionVal::search(nr_areas).comp_dist(dis);
             // 探索回数によるペナルティ
             let pena = if let Some(cell) = self.get(cd_and_dir.0) {
                 cell.search_suc_rate()
@@ -554,15 +552,11 @@ impl Dangeon {
 
         // calc suspicious wall
         let mut wall_val = ActionVal::default();
-        let walls = if non_visited_cd.is_some() {
-            Vec::new()
-        } else {
-            self.find_walls(player_cd)
-        };
+        let walls = self.find_walls(player_cd);
         let wall_cd = walls.iter().max_by_key(|cd_and_dir| {
             let nr_areas = calc_nonroom_area(cd_and_dir.0, cd_and_dir.1);
             let dis = *dist.get(cd_and_dir.0).unwrap_or(&INF_DIST);
-            let val = ActionVal::explore(nr_areas).comp_dist(dis);
+            let val = ActionVal::search(nr_areas).comp_dist(dis);
             // 探索回数によるペナルティ
             let pena = if let Some(cell) = self.get(cd_and_dir.0) {
                 cell.search_suc_rate()
@@ -574,28 +568,10 @@ impl Dangeon {
             val
         });
 
-        let max_act = comp_action!(non_visited_val, dead_end_val, wall_val);
-        trace!(
-            LOGGER,
-            "non visited: {:?}, dead_end: {:?}, wall: {:?}",
-            non_visited_val,
-            dead_end_val,
-            wall_val
-        );
-        match max_act {
-            0 => {
-                let cd = non_visited_cd?;
-                Some((*cd, non_visited_val))
-            }
-            1 => {
-                let cd = dead_end_cd?.0;
-                Some((cd, dead_end_val))
-            }
-            2 => {
-                let cd = wall_cd?.0;
-                Some((cd, wall_val))
-            }
-            _ => None,
+        if dead_end_val >= wall_val {
+            Some((dead_end_cd?.0, dead_end_val))
+        } else {
+            Some((wall_cd?.0, wall_val))
         }
     }
 
@@ -605,8 +581,7 @@ impl Dangeon {
         Some(cd.1)
     }
 
-    pub fn find_nearest_item(&self, cd: Coord) -> Option<(Coord, ActionVal)> {
-        let dist = self.make_dist_map(cd)?;
+    pub fn find_nearest_item(&self, dist: &SimpleMap<i32>) -> Option<(Coord, ActionVal)> {
         let (cell, cd) = self.iter()
             .filter(|cell_cd| cell_cd.0.obj.is_item())
             .min_by_key(|cell_cd| *dist.get(cell_cd.1).unwrap_or(&0))?;
@@ -1015,10 +990,10 @@ mod test {
         let d = make_dangeon(&MAP1);
         let cur = d.player_cd().unwrap();
         assert_eq!(cur, Coord::new(8, 9));
-        let item = d.find_nearest_item(cur).unwrap();
+        let dist = d.make_dist_map(cur).unwrap();
+        let item = d.find_nearest_item(&dist).unwrap();
         assert_approx_eq!(*item.1, *ActionVal::from_item(Item::Potion));
         let stair = d.find_stair().unwrap();
-        let dist = d.make_dist_map(cur).unwrap();
         assert_eq!(d.can_move(stair, Direc::RightUp), true);
         assert_eq!(d.can_move(stair, Direc::Down), false);
         assert_eq!(28, *dist.get(stair).unwrap());
