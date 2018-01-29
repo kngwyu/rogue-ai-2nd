@@ -700,16 +700,16 @@ impl FeudalAgent {
     }
     // 成功判定と同時に失敗判定をする
     fn action_sub(&mut self) -> Option<Vec<u8>> {
-        trace!(LOGGER, "action_sub: {:?}", self.play_info);
         let mut rethinked = false;
         if self.msg_flags.need_to_reset() {
             self.play_info.init_tact();
         }
         if let Some(cd) = self.msg_flags.new_cd {
             self.set_cur_cd(cd);
-        } else {
+        } else if let Action::Move(_) = self.play_info.act {
             self.play_info.init_tact();
         }
+        trace!(LOGGER, "action_sub: {:?}", self.play_info);
         let mut nxt_playinfo = match self.play_info.tact {
             Tactics::Explore => {
                 // 割込み処理 終了判定
@@ -1209,11 +1209,61 @@ mod enemy_search {
 #[cfg(test)]
 mod test {
     use super::*;
+    use testutils::*;
     #[test]
-    fn cmp_act() {
+    fn test_comp_action() {
         let a = ActionVal(5.0);
         let b = ActionVal(6.0);
         let c = ActionVal(4.0);
         assert_eq!(comp_action!(a, b, c), 1);
+    }
+    const MAP1: &str = "
+             -+--
+            |   |
+            |   |                 ------+---
+            |   |                 |.%.*B..@|
+            |   +#################+........|
+            -----                 ----------
+";
+    const MAP2: &str = "
+             -+--
+            |   |
+            |   |                 ------+---
+            |   |                 |.%.*.B.@|
+            |   +#################+.....)..|
+            -----                 ----------
+";
+    const MAP3: &str = "
+             -+--
+            |   |
+            |   |                 ------+---
+            |   |                 |.%.*....|
+            |   +#################+....B).@|
+            -----                 ----------
+";
+    const MAP4: &str = "
+             -+--
+            |   |
+            |   |                 ------+---
+            |   |                 |.%.*....|
+            |   +#################+.....B@.|
+            -----                 ----------
+";
+    #[test]
+    fn test_enemy_list() {
+        let mut enemy_list = EnemyList::new();
+        let maps = vec![MAP1, MAP2, MAP3, MAP4];
+        let answers = vec![
+            Coord { x: 39, y: 3 },
+            Coord { x: 40, y: 3 },
+            Coord { x: 39, y: 4 },
+            Coord { x: 40, y: 4 },
+        ];
+        let mut dangeon = make_dangeon(MAP1);
+        for (map, &ans) in maps.iter().zip(answers.iter()) {
+            dangeon.merge(&str_to_buf(map));
+            enemy_list.merge(&dangeon);
+            assert_eq!(ans, enemy_list.0[0].cd);
+        }
     }
 }

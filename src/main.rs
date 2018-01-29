@@ -27,6 +27,7 @@ mod consts;
 mod agent;
 mod dangeon;
 mod damage;
+mod testutils;
 
 use agent::FeudalAgent as Agent;
 use cgw::{GameSetting, Severity};

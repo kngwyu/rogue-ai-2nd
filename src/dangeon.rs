@@ -309,6 +309,12 @@ impl Dangeon {
         }
         let cur_cell = self.get(cd)?;
         let nxt_cell = self.get(cd + d.to_cd())?;
+        // Trapだけ特殊処理
+        if nxt_cell.surface == Surface::Trap {
+            if !is_enemy {
+                return Some(false);
+            }
+        }
         let cur_sur = if cur_cell.need_guess() {
             self.guess_floor(cd)?
         } else {
@@ -960,6 +966,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use testutils::make_dangeon;
     // complete map
     const MAP1: &str = "
                             ----------
@@ -1019,31 +1026,5 @@ mod test {
                 assert_eq!(cell.surface, Surface::Floor);
             }
         }
-    }
-    use std::io::{BufRead, BufReader};
-    use std::str;
-    fn make_dangeon(s: &str) -> Dangeon {
-        let mut res = Dangeon::default();
-        {
-            let mut orig = Vec::new();
-            let mut buf = String::new();
-            let mut reader = BufReader::new(s.as_bytes());
-            while let Ok(n) = reader.read_line(&mut buf) {
-                if n == 0 || buf.pop() != Some('\n') {
-                    break;
-                }
-                if buf.is_empty() {
-                    continue;
-                }
-                let mut v = buf.as_bytes().to_owned();
-                while v.len() < COLUMNS {
-                    v.push(b' ');
-                }
-                orig.push(v);
-                buf.clear();
-            }
-            res.merge(&orig);
-        }
-        res
     }
 }
