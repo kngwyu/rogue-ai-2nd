@@ -231,7 +231,7 @@ impl Dangeon {
     pub fn extend_floor(&mut self, start: Coord) {
         if let Some(rect) = self.extend_floor_sub(start) {
             for (cell, cd) in self.rect_iter_mut(rect) {
-                match rect.check_cd(cd) {
+                match rect.check_pos(cd) {
                     RectPos::In => cell.surface = Surface::Floor,
                     RectPos::OnLine => {
                         if cell.surface.is_unknown() {
@@ -922,7 +922,7 @@ impl Rect {
     fn range_ok(&self, cd: Coord) -> bool {
         self.l.x <= cd.x && cd.x <= self.r.y && self.l.y <= cd.y && cd.y <= self.r.y
     }
-    fn check_cd(&self, cd: Coord) -> RectPos {
+    fn check_pos(&self, cd: Coord) -> RectPos {
         if self.l.x < cd.x && cd.x < self.r.y && self.l.y < cd.y && cd.y < self.r.y {
             RectPos::In
         } else if self.range_ok(cd) {
@@ -1044,15 +1044,19 @@ mod test {
         assert_eq!(
             rect,
             Rect {
-                l: Coord { x: 2, y: 9 },
-                r: Coord { x: 24, y: 12 },
+                l: Coord { x: 1, y: 8 },
+                r: Coord { x: 25, y: 13 },
             }
         );
         for (cell, cd) in d.rect_iter(rect) {
             if cell.surface == Surface::None {
                 assert_eq!(cd, cur);
             } else {
-                assert_eq!(cell.surface, Surface::Floor);
+                match rect.check_pos(cd) {
+                    RectPos::In => assert_eq!(cell.surface, Surface::Floor),
+                    RectPos::OnLine => assert_eq!(cell.surface, Surface::Wall),
+                    _ => {}
+                }
             }
         }
     }
