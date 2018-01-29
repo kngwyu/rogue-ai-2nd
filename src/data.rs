@@ -425,7 +425,7 @@ impl EnemyHist {
         }
     }
     pub fn is_live(&self) -> bool {
-        let threshold = -0.5;
+        let threshold = -5.0;
         *self.hp_ex > threshold
     }
 }
@@ -848,6 +848,7 @@ pub enum Surface {
     Stair,
     Door,
     Trap,
+    DoorOrRoad,
     None,
 }
 
@@ -877,6 +878,12 @@ impl Surface {
     pub fn can_be_road(&self) -> bool {
         match *self {
             Surface::Road | Surface::Trap | Surface::Stair => true,
+            _ => false,
+        }
+    }
+    pub fn is_unknown(&self) -> bool {
+        match *self {
+            Surface::DoorOrRoad | Surface::None => true,
             _ => false,
         }
     }

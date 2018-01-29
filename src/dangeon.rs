@@ -163,12 +163,18 @@ impl Dangeon {
                 return DangeonMsg::Die;
             }
             cell_mut.obj = FieldObject::from(c);
-            if cell_mut.surface == Surface::None {
-                let cur_surface = Surface::from(c);
-                cell_mut.surface = cur_surface;
-                if cur_surface != Surface::None {
+            let cur_surface = Surface::from(c);
+            if cur_surface != Surface::None {
+                if cell_mut.surface == Surface::None {
                     res = DangeonMsg::FindNew;
-                    new_floor = Some(cd);
+                    if cur_surface == Surface::Floor {
+                        new_floor = Some(cd);
+                    }
+                }
+                cell_mut.surface = cur_surface;
+            } else if cur_surface == Surface::DoorOrRoad {
+                if cell_mut.obj != FieldObject::None {
+                    cell_mut.surface = Surface::Road;
                 }
             }
         }
@@ -224,8 +230,16 @@ impl Dangeon {
 
     pub fn extend_floor(&mut self, start: Coord) {
         if let Some(rect) = self.extend_floor_sub(start) {
-            for (cell, _cd) in self.rect_iter_mut(rect) {
-                cell.surface = Surface::Floor;
+            for (cell, cd) in self.rect_iter_mut(rect) {
+                match rect.check_cd(cd) {
+                    RectPos::In => cell.surface = Surface::Floor,
+                    RectPos::OnLine => {
+                        if cell.surface.is_unknown() {
+                            cell.surface = Surface::DoorOrRoad;
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -247,10 +261,10 @@ impl Dangeon {
             }
             let b = bound?;
             match d {
-                Direc::Up => rect.l.y = b.y + 1,
-                Direc::Right => rect.r.x = b.x - 1,
-                Direc::Down => rect.r.y = b.y - 1,
-                Direc::Left => rect.l.x = b.x + 1,
+                Direc::Up => rect.l.y = b.y,
+                Direc::Right => rect.r.x = b.x,
+                Direc::Down => rect.r.y = b.y,
+                Direc::Left => rect.l.x = b.x,
                 _ => {}
             }
         }
@@ -890,6 +904,12 @@ pub struct Rect {
     r: Coord,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum RectPos {
+    In,
+    OnLine,
+    Out,
+}
 impl Rect {
     fn new(l: Coord, r: Coord) -> Option<Rect> {
         let ok = l.x <= r.x && l.y <= r.y;
@@ -901,6 +921,15 @@ impl Rect {
     }
     fn range_ok(&self, cd: Coord) -> bool {
         self.l.x <= cd.x && cd.x <= self.r.y && self.l.y <= cd.y && cd.y <= self.r.y
+    }
+    fn check_cd(&self, cd: Coord) -> RectPos {
+        if self.l.x < cd.x && cd.x < self.r.y && self.l.y < cd.y && cd.y < self.r.y {
+            RectPos::In
+        } else if self.range_ok(cd) {
+            RectPos::OnLine
+        } else {
+            RectPos::Out
+        }
     }
 }
 
