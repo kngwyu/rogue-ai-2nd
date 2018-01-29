@@ -95,7 +95,6 @@ impl Cell {
             None
         }
     }
-
     pub fn surface(&self) -> Surface {
         self.surface
     }
@@ -735,7 +734,7 @@ where
 
 int_alias!(BlockVal, i8);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Coord {
     pub x: i32,
     pub y: i32,

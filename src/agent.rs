@@ -5,8 +5,8 @@ use dangeon::*;
 use data::*;
 use num_cpus;
 use parse::{MsgParse, StatusParse};
-use std::cmp;
-use std::cmp::Ordering;
+use std::cmp::{self, Ordering};
+use std::fmt;
 use std::slice::Iter as SliceIter;
 use std::slice::IterMut as SliceIterMut;
 use std::str;
@@ -153,6 +153,10 @@ impl EnemyList {
             false
         }
     }
+
+    fn coord_list(&self) -> Vec<Coord> {
+        self.iter().map(|enem| enem.cd).collect()
+    }
 }
 
 struct ItemList(Vec<ItemPack>);
@@ -286,7 +290,7 @@ impl ActionVal {
         ActionVal(*base * 10.0)
     }
     fn from_exp(i: i32) -> ActionVal {
-        ActionVal(f64::from(i * 10))
+        ActionVal(f64::from(i * 20))
     }
     fn from_hung(hung: i8) -> ActionVal {
         match hung {
@@ -314,12 +318,11 @@ impl ActionVal {
     }
     // searchコマンドに対する評価値
     pub fn search(nr_areas: u8) -> ActionVal {
-        let val = match nr_areas {
+        ActionVal(match nr_areas {
             1 => 3.0,
             2 => 10.0,
             _ => 1.0,
-        };
-        ActionVal(val)
+        })
     }
     // ActionValに対し探索成功確率で補正をかける
     pub fn comp_suc_rate(self, rate: f64) -> ActionVal {
@@ -348,13 +351,10 @@ impl ActionVal {
     // TODO: Magic Numberを使わないで書く
     fn stair(exp_rate: f64) -> ActionVal {
         let comp = 1.0 - exp_rate.log(2.0) / (-5.0);
-        ActionVal(100.0 * comp)
+        ActionVal(20.0 * comp)
     }
     fn recover(enough_hp: bool) -> ActionVal {
-        if enough_hp {
-            return ActionVal::default();
-        }
-        ActionVal(30.0)
+        ActionVal(if enough_hp { 0.0 } else { 30.0 })
     }
     fn death() -> ActionVal {
         -ActionVal(1000.0)
@@ -462,8 +462,8 @@ struct Equipment {
 impl Equipment {
     fn initial() -> Equipment {
         Equipment {
-            weapon_id: Some(b'b'),
-            armor_id: Some(b'c'),
+            weapon_id: Some(b'c'),
+            armor_id: Some(b'b'),
             rring_id: None,
             lring_id: None,
         }
@@ -482,6 +482,15 @@ pub struct FeudalAgent {
     msg_flags: MsgFLags,
     equipment: Equipment,
     dead: bool,
+}
+
+// !!! STUB !!!
+impl fmt::Debug for FeudalAgent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "PlayerStatus: {:?}\n", self.player_stat)?;
+        writeln!(f, "PlayInfo: {:?}\n", self.play_info)?;
+        Ok(())
+    }
 }
 
 impl FeudalAgent {
@@ -813,6 +822,7 @@ impl FeudalAgent {
 impl Reactor for FeudalAgent {
     fn action(&mut self, action_res: ActionResult, turn: usize) -> Option<Vec<u8>> {
         trace!(LOGGER, "{:?} {}", action_res, turn);
+        trace!(LOGGER, "{:?}", self);
         if self.dead {
             return Some(Action::Enter.into());
         }
@@ -958,7 +968,7 @@ mod enemy_search {
             }
         }
         fn is_live(&self) -> bool {
-            let threshold = -0.5;
+            let threshold = 0.5;
             *self.hp_ex > threshold
         }
     }
@@ -967,12 +977,14 @@ mod enemy_search {
     enum TryAction {
         Move(Direc),
         Throw((Direc, Weapon)),
+        Stair,
     }
     impl TryAction {
         fn to_action(&self, agent: &FeudalAgent) -> Option<Action> {
             let res = match *self {
                 TryAction::Move(d) => Action::Move(d),
                 TryAction::Throw((d, w)) => Action::Throw((d, agent.get_weapon_id(w)?)),
+                TryAction::Stair => Action::DownStair,
             };
             Some(res)
         }
@@ -1044,6 +1056,7 @@ mod enemy_search {
                         return None;
                     }
                 }
+                _ => {}
             }
         }
         // 敵の行動
@@ -1057,34 +1070,44 @@ mod enemy_search {
         );
         let cur_cd = next_state.player.cd;
         let mut received_dam = ActionVal::default();
-        'outer: for enem_ref in next_state.enemy_list.iter_mut() {
+        let mut enem_coord = next_state.enemy_list.coord_list();
+        'outer: for (i, enem_ref) in next_state.enemy_list.iter_mut().enumerate() {
+            macro_rules! is_cd_used {
+                ($cd:expr) => {(
+                    enem_coord.iter().take(i).any(|&cd| cd == $cd)
+                )}
+            }
             if !enem_ref.running {
                 continue;
             }
             // 殴れるかチェック
-            for d in Direc::vars() {
-                let cd = enem_ref.cd + d.to_cd();
-                if cd == cur_cd {
-                    let prob = hit_rate_deffence(&agent.player_stat, &enem_ref.typ);
-                    let dam = expect_dam_deffence(enem_ref.typ);
-                    let dam = dam * DamageVal(*prob);
-                    next_state.player.hp_ex -= dam;
-                    received_dam += ActionVal::from_enem_dam(enem_ref.hp_ex, dam);
-                    continue 'outer;
+            if !is_cd_used!(enem_ref.cd) {
+                for d in Direc::vars() {
+                    let cd = enem_ref.cd + d.to_cd();
+                    if cd == cur_cd {
+                        let prob = hit_rate_deffence(&agent.player_stat, &enem_ref.typ);
+                        let dam = expect_dam_deffence(enem_ref.typ);
+                        let dam = dam * DamageVal(*prob);
+                        next_state.player.hp_ex -= dam;
+                        received_dam += ActionVal::from_enem_dam(enem_ref.hp_ex, dam);
+                        continue 'outer;
+                    }
                 }
             }
-            let cur_dist = cur_cd.dist_euc(&enem_ref.cd);
+            let (mut best_dist, mut best_cd) = (cur_cd.dist_euc(&enem_ref.cd), Coord::default());
             for &d in Direc::vars() {
                 let cd = enem_ref.cd + d.to_cd();
-                if !agent.dangeon.can_move_enemy(enem_ref.cd, d) {
+                if !agent.dangeon.can_move_enemy(enem_ref.cd, d) || is_cd_used!(cd) {
                     continue;
                 }
                 let dist = cur_cd.dist_euc(&cd);
-                if dist < cur_dist {
-                    enem_ref.cd = cd;
-                    break;
+                if dist < best_dist {
+                    best_dist = dist;
+                    best_cd = cd;
                 }
             }
+            enem_ref.cd = best_cd;
+            enem_coord[i] = best_cd;
         }
         let mut val = ActionVal::from_gold(gained_gold) + ActionVal::from_exp(gained_exp)
             + received_dam + caused_dam;
@@ -1141,14 +1164,14 @@ mod enemy_search {
             if let Some(st) = state_list.iter().next() {
                 worst = cmp::min(worst, st.val);
             }
-            for cur_state in state_list.iter().rev().take(SEARCH_WIDTH_MAX) {
+            for mut cur_state in state_list.into_iter().rev().take(SEARCH_WIDTH_MAX) {
                 if cur_state.end {
-                    next_states.push(cur_state.clone());
+                    next_states.push(cur_state);
                     continue;
                 }
                 // just try to move or throw
                 for &d in Direc::vars().take(8) {
-                    if let Some(ns) = simulate_act(agent, cur_state, TryAction::Move(d), turn) {
+                    if let Some(ns) = simulate_act(agent, &cur_state, TryAction::Move(d), turn) {
                         add_state!(ns);
                     }
                 }
@@ -1158,7 +1181,7 @@ mod enemy_search {
                     }
                     for &d in Direc::vars().take(8) {
                         if let Some(mut ns) =
-                            simulate_act(agent, cur_state, TryAction::Throw((d, w)), turn)
+                            simulate_act(agent, &cur_state, TryAction::Throw((d, w)), turn)
                         {
                             for wep in &mut ns.player.throw {
                                 if wep.0 == w {
@@ -1169,16 +1192,22 @@ mod enemy_search {
                         }
                     }
                 }
+                if let Some(cell) = agent.dangeon.get(cur_state.player.cd) {
+                    if cell.surface() == Surface::Stair {
+                        cur_state.actions.push(TryAction::Stair);
+                        cur_state.end = true;
+                        add_state!(cur_state);
+                    }
+                }
             }
             state_list = next_states;
         }
         let best_state = state_list.iter().max()?;
         trace!(
             LOGGER,
-            "best_score: {:?}, worst: {:?}, best_action: {:?}",
-            best_state.val,
-            worst,
-            best_state.actions.get(0)?.to_action(agent),
+            "SerachResult best_state: {:?}, worst_score: {:?}",
+            best_state,
+            worst
         );
         Some((
             best_state.val - worst,
